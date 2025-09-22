@@ -1,0 +1,705 @@
+from math import pi
+from typing import List, Tuple
+
+import numpy as np
+from shapely import (
+    GeometryCollection,
+    LinearRing,
+    LineString,
+    MultiLineString,
+    MultiPoint,
+    MultiPolygon,
+    Point,
+    Polygon,
+    oriented_envelope,
+)
+from shapely.ops import substring
+
+from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
+from nexat_trace.shared.config import RoutePlanningConfig
+from nexat_trace.shared.exceptions import GraphConstructionError
+from nexat_trace.shared.planning_messages import PlanningMsg
+from nexat_trace.track_system import TrackSystem
+from nexat_trace.util import geom_tools as gt
+
+
+def get_target_headland_from_track_system(
+        track_system: TrackSystem,
+        config: RoutePlanningConfig) -> Tuple[LinearRing | List[LinearRing], bool]:
+    """
+    Returns the target headlands depending on the current working width and wether or not it is the configured index.
+
+    Target headlands are rounded to vehicle turning radius depending on the given working width.
+    """
+
+    target_headland = 1
+    if config.override_headland_index is not None:
+        target_headland = config.override_headland_index
+    else:
+        if config.working_width >= 4 * config._track_width:
+            target_headland = 2
+
+        if config.working_width >= 5 * config._track_width:
+            target_headland = 3
+
+    is_target = target_headland < len(track_system.headlands)
+    rings = track_system.headlands[min(len(track_system.headlands) - 1, target_headland)]
+
+    rounded_rings = [gt.erode_linearring(ring, config.vehicle_turning_radius) for ring in rings]
+
+    return rounded_rings, is_target
+
+
+def get_secondary_positions(
+        ab_lines: List[LineString],
+        headlands: List[LinearRing],
+        route_params: RoutePlanningConfig) -> List[SecondaryTrackGraphNode]:
+    """
+    Returns the positions where secondary nodes should be placed on the headland rings.
+    """
+    headland_collection = GeometryCollection(headlands)
+    cut_ab_lines = []
+    for line in ab_lines:
+        if line.intersects(headland_collection) and line.length > 2.0:
+            cut_line = substring(line, 1.0, line.length - 1.0)
+            cut_ab_lines.append(cut_line)
+        else:
+            cut_ab_lines.append(line)
+
+    points = []
+    multi_ab_lines = MultiLineString(
+        [gt.extend_line(line, 100000.0) for line in ab_lines]
+    )
+    colinear_extension_points = []
+
+    multi_ab_lines_unextended = MultiLineString(cut_ab_lines)
+
+    for line in cut_ab_lines:
+
+        # Check front of line for collisions
+        forward_line = LineString(line)
+        forward_end = Point(line.coords[-1])
+
+        intersections: List[SecondaryTrackGraphNode] = []
+        for i in range(0, len(headlands)):
+            headland = headlands[i]
+            extended_line = gt.extend_line_in_bounds(forward_line, headlands[0], extend_back = False)
+            # extend line beyond headland ring to make clear intersection
+            extended_line = gt.extend_line(extended_line, 1.0)
+
+            intersection = extended_line.intersection(headland)
+            if isinstance(intersection, MultiPoint):
+                intersections.extend([SecondaryTrackGraphNode(point, i) for point in intersection.geoms])
+            elif isinstance(intersection, Point):
+                intersections.append(SecondaryTrackGraphNode(intersection, i))
+
+        if len(intersections) >= 1:
+            intersections.sort(key=lambda p: p.distance_to(forward_end))
+            points.append(intersections[0])
+
+            # 3 points, all within a certain distance_to of each other (min/max to headland)
+            # 4 * track_width * 1.5 max probable working width
+            if len(intersections) == 3 and intersections[1].distance_to(intersections[2]) < 4 * route_params._track_width * 1.5:
+
+                # is there an ab line here?
+                link_edge_candidate = LineString([intersections[1].position, intersections[2].position])
+                link_edge_candidate = LineString(
+                    [
+                        link_edge_candidate.interpolate(0.1, True),
+                        link_edge_candidate.interpolate(0.9, True)
+                    ]
+                )
+                if not link_edge_candidate.dwithin(multi_ab_lines_unextended, 0.01):
+                    intersections[1].link_node(intersections[2], None, None)
+                    points.extend(intersections[1:])
+
+        else:
+            print(f"intersections for secondary positions malformed: {intersections}")
+            raise GraphConstructionError(
+                "Could not determine positions for secondary nodes. "
+                "This may be because of the working width in combination with "
+                "cutouts on the outer headland"
+            )
+
+        # Check back of line for collisions
+        backward_line = line.reverse()
+        back_end = Point(line.coords[0])
+
+        intersections = []
+        for i in range(0, len(headlands)):
+            headland = headlands[i]
+            extended_line = gt.extend_line_in_bounds(backward_line, headlands[0], extend_back = False)
+            # extend line beyond headland ring to make clear intersection
+            extended_line = gt.extend_line(extended_line, 1.0)
+
+            intersection = extended_line.intersection(headland)
+            if isinstance(intersection, MultiPoint):
+                intersections.extend([SecondaryTrackGraphNode(point, i) for point in intersection.geoms])
+            elif isinstance(intersection, Point):
+                intersections.append(SecondaryTrackGraphNode(intersection, i))
+
+        if len(intersections) >= 1:
+            intersections.sort(key=lambda p: p.distance_to(back_end))
+            points.append(intersections[0])
+
+            # 3 points, all within a certain distance_to of each other (min/max to headland)
+            # 4 * track_width * 1.5 max probable working width
+            if len(intersections) == 3 and intersections[1].distance_to(intersections[2]) < 4 * route_params._track_width * 1.5:
+                # is there an ab line here?
+                link_edge_candidate = LineString([intersections[1].position, intersections[2].position])
+                link_edge_candidate = LineString(
+                    [
+                        link_edge_candidate.interpolate(0.1, True),
+                        link_edge_candidate.interpolate(0.9, True)
+                    ]
+                )
+                if not link_edge_candidate.dwithin(multi_ab_lines_unextended, 0.01):
+                    intersections[1].link_node(intersections[2], None, None)
+                    points.extend(intersections[1:])
+
+        else:
+            print(f"intersections for secondary positions malformed: {intersections}")
+            raise GraphConstructionError(
+                "Could not determine positions for secondary nodes. "
+                "This may be because of the working width in combination with "
+                "cutouts on the outer headland"
+            )
+
+        # Create colinear extension points
+        for i in range(0, len(headlands)):
+            if not extended_line.intersects(headlands[i]):
+                continue
+
+            over_extended_line = gt.extend_line(extended_line, 100000.0)
+            intersection = over_extended_line.intersection(headlands[i])
+            if isinstance(intersection, Point):
+                p = intersection
+            elif isinstance(intersection, MultiPoint):
+                p = intersection.geoms[0]
+            else:
+                continue
+
+            headland = gt.ring_with_origin_at(
+                headlands[i],
+                p
+            )
+            difference = headland.difference(multi_ab_lines)
+            if not isinstance(difference, MultiLineString):
+                continue
+            slices = list(difference.geoms)
+
+            for slice_line in slices:
+                if slice_line.length < 0.1:
+                    continue
+                p1 = Point(slice_line.coords[0])
+                p2 = Point(slice_line.coords[-1])
+                if p1.dwithin(over_extended_line, 1.0) and p2.dwithin(over_extended_line, 1.0):
+                    middle = slice_line.interpolate(0.5, True)
+                    if all(middle.distance(other.position) > 1.0 for other in colinear_extension_points):
+                        colinear_extension_points.append(SecondaryTrackGraphNode(middle, i))
+
+    points.extend(colinear_extension_points)
+
+    # Sort secondary points into rings
+    rings = []
+    for i, headland in enumerate(headlands):
+        points_on_ring = []
+        for point in points:
+            if point.ring_index == i:
+                points_on_ring.append(point)
+
+        # sort the positions after the run of the original headland ring
+        points_on_ring.sort(key=lambda point: headland.project(point.position))
+
+        rings.append(points_on_ring)
+
+    connect_rings(headlands, rings, route_params)
+
+    # return flattened list
+    return [node for ring in rings for node in ring]
+
+
+def connect_rings(
+        headlands: List[LinearRing],
+        rings: List[List[SecondaryTrackGraphNode]],
+        route_params: RoutePlanningConfig) -> None:
+    """
+    Runs through the given headlands and connects the secondary nodes.
+    """
+
+    for i, ring in enumerate(rings):
+        # if a cutout ring is located at the edge of the field connect it to the field border (= headland[0])
+        to_be_connected = (
+            (route_params.working_width > route_params._track_width
+                and len(ring) < round(route_params.working_width / route_params._track_width) + route_params._track_width * 0.6
+                and headlands[i].distance(headlands[0]) < 3.0 * route_params._track_width)
+            or (i > 0 and headlands[i].intersects(headlands[0]))  # Headland crosses field border
+        )
+
+        for ii in range(-1, len(ring) - 1):
+
+            node = ring[ii]
+            other = ring[ii + 1]
+
+            # if connection is a projection from get_secondary_positions (= no metrics)
+            # replace direct connection with neighbors
+            if i > 0:
+                links = node.edges.copy()
+                for connection in links.values():
+                    if connection[0].ring_index == 0 and connection[1] is None:
+
+                        metrics = node.calculate_metrics(connection[0].front_secondary, route_params)
+                        node.link_node(connection[0].front_secondary, metrics)
+
+                        metrics = node.calculate_metrics(connection[0].back_secondary, route_params)
+                        node.link_node(connection[0].back_secondary, metrics)
+
+                        node.remove_link(connection[0])
+                        to_be_connected = False
+
+            node.link_front(other, route_params)
+
+            if to_be_connected:
+                node.ring_index = -1
+
+        if to_be_connected and len(ring) > 1:
+            # connect the ring to the outer headland
+            ring.sort(
+                key=lambda node: node.position.distance(LinearRing([n.position for n in rings[0]]))
+            )
+            if len(rings[0]) < 1:
+                continue
+            outer_nodes = rings[0].copy()
+            conn_node_1 = ring[0]
+            conn_node_2 = ring[1]
+
+            outer_nodes.sort(key=lambda node: node.distance_to(conn_node_1))
+            conn_node_1: SecondaryTrackGraphNode
+            neighbor = outer_nodes[0]
+            metrics = conn_node_1.calculate_metrics(neighbor, route_params)
+            conn_node_1.link_node(neighbor, metrics)
+
+            outer_nodes.sort(key=lambda node: node.distance_to(conn_node_2))
+            neighbor = outer_nodes[0]
+            metrics = conn_node_2.calculate_metrics(neighbor, route_params)
+            conn_node_2.link_node(neighbor, metrics)
+
+
+def simplify_ab_lines(
+        old_ab_lines: List[LineString],
+        headlands: List[LinearRing],
+        route_params: RoutePlanningConfig) -> Tuple[List[LineString], bool]:
+    """
+    Removes any vertices in the ab lines accept for the first and last one.
+
+    Checks every combination of lines if they are split by a bulge in only the inner most headland.
+    If they are, connects them into a single ab-line.
+    """
+
+    extra_vertices = any(len(line.coords) > 2 for line in old_ab_lines)
+
+    simplify_pairs = []
+    replacements = []
+    max_extension_length = 0.0
+    for ring in headlands:
+        max_extension_length += ring.length
+
+    for i in range(len(old_ab_lines)):
+        if i in simplify_pairs:
+            continue
+        line_1 = old_ab_lines[i]
+
+        xl1 = gt.extend_line(line_1, max_extension_length)
+        for ii in range(i, len(old_ab_lines)):
+            line_2 = old_ab_lines[ii]
+
+            if line_1.equals(line_2):
+                continue
+
+            xl2 = gt.extend_line(line_2, max_extension_length)
+            if not xl1.dwithin(xl2, 1.0):
+                continue
+
+            # make constructed line covering the line pair and check for intersection with headland
+            coords = list(line_1.coords) + list(line_2.coords)
+            test_line = LineString(coords)
+
+            is_candidate = True
+            for ring in headlands:
+                if test_line.intersects(ring):
+                    is_candidate = False
+                    break
+
+            if not is_candidate:
+                continue
+
+            # found line pair to simplify
+            replacement_coords = list(test_line.coords)
+            replacement_coords.sort(key=lambda coord: test_line.centroid.distance(Point(coord)))
+            furthest = Point(replacement_coords[-1])
+            replacement_coords.sort(key=lambda coord: furthest.distance(Point(coord)))
+            replacement = LineString(replacement_coords)
+            replacement_centroid = replacement.centroid
+            replacement_coords.sort(key=lambda coord: replacement_centroid.distance(Point(coord)))
+
+            replacement = LineString([replacement_coords[-1], replacement_coords[-2]])
+
+            simplify_pairs.extend([i, ii])
+            replacements.append(replacement)
+
+    new_ab_lines: List[LineString] = old_ab_lines.copy()
+    for index in simplify_pairs:
+        try:
+            new_ab_lines.remove(old_ab_lines[index])
+        except ValueError:
+            continue
+
+    # look for overlapping replacements and only take one covering both
+    for replacement in replacements:
+        covered_by_other = False
+        for other_replacement in replacements:
+            if replacement == other_replacement:
+                continue
+            if replacement.dwithin(other_replacement, 1.0) and replacement.length < other_replacement.length:
+                covered_by_other = True
+                break
+        if not covered_by_other:
+            new_ab_lines.append(replacement)
+
+    # discard ab lines if on headland
+    multi_headland = MultiLineString(headlands)
+    new_ab_lines = [
+        line for line in new_ab_lines if (
+            line.length > route_params.min_ab_line_length
+            and line.centroid.distance(multi_headland) > 0.01
+        )
+    ]
+
+    return new_ab_lines, extra_vertices
+
+
+def track_system_to_primaries_secondaries(
+        track_system: TrackSystem,
+        route_params: RoutePlanningConfig
+        ) -> Tuple[List[LineString], List[SecondaryTrackGraphNode], List[PlanningMsg]]:
+    """
+    Returns primary ab_lines, secondary headland_points, warnings.
+    """
+
+    warnings = []
+    headlands, is_target = get_target_headland_from_track_system(
+        track_system,
+        route_params,
+    )
+    if not is_target:
+        warnings.append(PlanningMsg.TARGET_HEADLAND_NOT_AVAILABLE)
+
+    ab_lines = list(track_system.ab_lines.geoms)
+
+    ab_lines, extra_vertices = simplify_ab_lines(ab_lines, headlands, route_params)
+    secondaries = get_secondary_positions(ab_lines, headlands, route_params)
+
+    if extra_vertices:
+        warnings.append(PlanningMsg.EXTRA_AB_LINE_POINTS_FOUND)
+        if route_params.debug_prints:
+            print("Found extra vertices in ab lines")
+
+    return ab_lines, secondaries, warnings
+
+
+def get_track_width(track_system: TrackSystem | List[LineString]) -> float | None:
+    """
+    Returns the track width of a given track system.
+    """
+    ab_lines: List[LineString] = []
+    if isinstance(track_system, TrackSystem):
+        ab_lines = list(track_system.ab_lines.geoms)
+    elif isinstance(track_system, list):
+        ab_lines = track_system.copy()
+    else:
+        raise TypeError("track_system must be instance of TrackSystem of list of LineStrings")
+
+    if ab_lines is None:
+        return None
+    if len(ab_lines) < 2:
+        return None
+
+    sort_from_point = ab_lines[0].parallel_offset(track_system.outer_border.exterior.length).centroid
+    ab_lines.sort(key = lambda line: line.distance(sort_from_point))
+
+    distances = []
+    for i in range(1, len(ab_lines)):
+        l1 = ab_lines[i - 1]
+        l2 = ab_lines[i]
+        distances.append(l1.distance(l2))
+
+    max_count = 0
+    margin = 0.0001
+    most_common = None
+
+    for i in range(len(distances)):
+        current_value = distances[i]
+        count = 0
+
+        for ii in range(len(distances)):
+            if abs(current_value - distances[ii]) <= margin:
+                count += 1
+
+        if count > max_count:
+            max_count = count
+            most_common = current_value
+
+    track_width = most_common
+
+    if abs(track_width - 14.0) < 0.001:
+        track_width = 14.0
+    elif abs(track_width - 13.716) < 0.001:
+        track_width = 13.716
+
+    return track_width
+
+
+def get_inner_border_from_track_system(track_system: TrackSystem, route_params: RoutePlanningConfig) -> MultiPolygon | None:
+    """
+    Generates the inner border on a track system.
+    """
+
+    headland_prep: list[float | None] = []
+    if route_params.working_width is None:
+        return None
+    mh = route_params._track_width / 2
+    new_ww = (
+        route_params.working_width - (route_params.working_width % (mh))
+        if ((route_params.working_width % (mh)) <= mh / 2)
+        else (route_params.working_width - (route_params.working_width % (mh)) + (mh))
+    )
+    for i, value in enumerate(track_system.headland_config):
+        head_width = value * route_params._track_width
+        if i == 0:
+            head_width /= 2
+        headland_prep.append(head_width)
+    headland_prep.append(mh)
+    offs = mh
+    if sum(headland_prep) < new_ww:
+        offs += new_ww - sum(headland_prep)
+
+    inner_headland_rings = track_system.headlands[-1]  # TODO make this support multi part fields
+    inner_headland_poly = Polygon(inner_headland_rings[0], inner_headland_rings[1:])
+    inner_border = inner_headland_poly.buffer(offs * -1, resolution=20, cap_style=2, join_style=2)
+
+    if isinstance(inner_border, Polygon):
+        inner_border = MultiPolygon([inner_border])
+
+    return inner_border
+
+
+def get_headland_index_of_path_on_track_system(path: LineString | MultiLineString, track_system: TrackSystem) -> int | None:
+    """
+    Looks for the index of the headland of a track system with the most intersection with a given path over that track system.
+    """
+
+    path_buffered = path.buffer(0.1)
+
+    multi_headland_geoms = [
+        MultiLineString(headland) for headland in track_system.headlands
+    ]
+
+    def headland_intersection_length(headland_index: int) -> float:
+        multi_headland_geom = multi_headland_geoms[headland_index]
+        intersection = path_buffered.intersection(multi_headland_geom)
+
+        multi_line_intersection: MultiLineString | None = None
+
+        if isinstance(intersection, GeometryCollection):
+            lines: List[LineString] = []
+            for geom in intersection.geoms:
+                if isinstance(geom, LineString):
+                    lines.append(geom)
+                elif isinstance(geom, MultiLineString):
+                    lines.extend(geom.geoms)
+            multi_line_intersection = MultiLineString(lines)
+
+        elif isinstance(intersection, MultiLineString):
+            multi_line_intersection = intersection
+
+        if multi_line_intersection is None:
+            return 0.0
+
+        return multi_line_intersection.length
+
+    all_headland_indices = list(range(len(track_system.headlands)))
+    target_index = max(all_headland_indices, key = headland_intersection_length)
+
+    if multi_headland_geoms[target_index].distance(path) > 0.0:
+        # path is not actually near the given field
+        return None
+
+    return target_index
+
+
+def get_ab_lines_on_path(track_system: TrackSystem, path: LineString, max_distance: float = 1.0) -> List[LineString]:
+    """
+    Returns the list of ab lines that are included in the given path within 'max_distance'.
+    """
+    ab_lines = list(track_system.ab_lines.geoms)
+    parallel_path_segments = []
+    test_line = ab_lines[0]
+    for i in range(1, len(path.coords)):
+        p1 = Point(path.coords[i - 1])
+        p2 = Point(path.coords[i])
+        segment = LineString([p1, p2])
+        angle = abs(gt.angle_between_lines(test_line, segment))
+        if (angle < 0.001 or abs(angle - pi) < 0.001):
+            parallel_path_segments.append(segment)
+
+    parallel_path = MultiLineString(parallel_path_segments)
+
+    included_ab_lines = []
+    for ab_line in ab_lines:
+        if ab_line.dwithin(parallel_path, max_distance):
+            included_ab_lines.append(ab_line)
+    if len(included_ab_lines) == 0:
+        return None
+
+    return included_ab_lines
+
+
+def get_working_width_of_path_on_track_system(
+        path_input: LineString | MultiLineString,
+        track_system: TrackSystem) -> float | None:
+    """
+    Returns the working width of a path on a track system.
+    """
+
+    if isinstance(path_input, MultiLineString):
+        coords = []
+        [coords.extend(segment.coords) for segment in path_input.geoms]
+        path = LineString(coords)
+    elif isinstance(path_input, LineString):
+        path = path_input
+    else:
+        raise TypeError("Path has to be LineString or MultiLineString")
+
+    ab_lines_list = get_ab_lines_on_path(track_system, path)
+
+    dists_path = []
+    for ab_line in ab_lines_list:
+        candidates = list(ab_lines_list)
+        candidates.sort(key=lambda x: x.distance(ab_line))
+        if len(candidates) < 3:
+            continue
+
+        nearest = candidates[1]
+        second_nearest = candidates[2]
+        dists_path.append(nearest.distance(ab_line))
+        dists_path.append(second_nearest.distance(ab_line))
+
+    return np.median(dists_path)
+
+
+def working_corridor_of_ab_line(
+        ab_line: LineString,
+        working_width: float,
+        border_poly: Polygon,
+        cutout_polys: List[Polygon] | None,
+        start_point: Point | None = None) -> Polygon | None:
+    """
+    Get the working corridor of a line with exactly 2 points.
+
+    The working corridor is the area that is reachable by the robot.
+
+    Parameters
+    ----------
+    ab_line : LineString
+        The line for which the working corridor should be calculated.
+    working_width : float
+        The width of the working corridor.
+    border_poly : Polygon
+        The border of the field.
+    cutout_polys : List[Polygon]
+        The cutouts of the field.
+    start_point : Point | None
+        The point where the robot is located.
+
+    Returns
+    -------
+
+    The working corridor as a Polygon or None if the robot is not contained in the working corridor.
+    """
+    if ab_line is None:
+        return None
+    if working_width is None:
+        return None
+    if border_poly is None:
+        return None
+    if cutout_polys is None:
+        cutout_polys = []
+    if start_point is None:
+        start_point = ab_line.centroid
+
+    try:
+        parallel_distance = working_width / 2.0
+
+        parallel_buffer = ab_line.buffer(
+            parallel_distance, cap_style='square', join_style='round'
+        )
+
+        inter_buffer = border_poly.intersection(parallel_buffer)
+
+        for polygon in cutout_polys:
+            if inter_buffer.intersects(polygon):
+                inter_buffer = inter_buffer.difference(polygon)
+
+        # is Multi or Polygon?
+        start_point_contained = False
+        if isinstance(inter_buffer, MultiPolygon):
+
+            for buffer in inter_buffer.geoms:
+                buffer = oriented_envelope(buffer)
+                if start_point and buffer.contains(start_point):
+                    inter_buffer = buffer
+                    start_point_contained = True
+                    break
+
+        else:
+            inter_buffer = oriented_envelope(inter_buffer)
+            if inter_buffer.contains(start_point):
+                start_point_contained = True
+
+        if start_point and not start_point_contained:
+            return None
+
+        return inter_buffer
+
+    except Exception:
+        return None
+
+
+def get_corridor_line(
+        ab_line: LineString,
+        working_width: float,
+        inner_border: LinearRing) -> LineString:
+    """
+    Returns the working corridor line of an ab line within an inner border.
+    """
+
+    if ab_line is None:
+        return None
+
+    corridor_poly = working_corridor_of_ab_line(
+        ab_line,
+        working_width,
+        Polygon(inner_border),
+        []
+    )
+
+    if corridor_poly is None:
+        return ab_line
+    corridor_line = gt.extend_line_in_bounds(
+        ab_line,
+        corridor_poly
+    )
+    corridor_line = corridor_line.intersection(corridor_poly)
+    if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
+        return corridor_line
+    return ab_line

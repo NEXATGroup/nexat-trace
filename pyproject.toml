@@ -1,0 +1,88 @@
+[build-system]
+requires = [
+    "setuptools>=61.0",
+    "wheel",
+    "Cython"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexat_trace"
+dynamic = ["version", "description", "dependencies", "readme", "requires-python", "authors", "optional-dependencies"]
+
+[tool.setuptools]
+license-files = [
+    "LICENSE",
+    "THIRD_PARTY"
+]
+
+[tool.ruff]
+target-version = "py310"
+
+# Directories to lint
+src = ["nexat_trace"]
+
+lint.select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "W",     # pycodestyle warnings
+    "I",     # isort (import sorting)
+    "N",     # pep8-naming
+    "D",     # pydocstyle (docstring conventions)
+    "UP",    # pyupgrade (modernize syntax)
+    "B",     # flake8-bugbear (common bugs)
+    "C90",   # mccabe (complexity)
+    "A",     # flake8-builtins
+    "C4",    # flake8-comprehensions
+    "T20",   # flake8-print (warn on print statements)
+    "SIM",   # flake8-simplify
+    
+]
+
+lint.preview = true
+lint.extend-select = [
+    "E225",  # missing whitespace around operator
+    "E226",  # missing whitespace around arithmetic operator
+]
+
+lint.extend-ignore = [
+    "E251",  # Spaces around keyword / parameter =
+]
+
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".venv",
+    "venv",
+    ".mypy_cache",
+    ".pytest_cache",
+]
+
+line-length = 130
+
+lint.ignore = [
+    "D100",    # Missing docstring in public module
+    "D104",    # Missing docstring in public package
+    "D401",    # First line should be in imperative mood
+    "UP035",   # typing List, Dict
+    "UP006",   # typing Tuple
+    "D200",    # One line docstring in multiple lines
+    "D202",    # Empty line after docstring
+    "D412",    # Empty line after docstring header
+    "T201",    # print()
+    "C901",    # complex function names,
+    "C416",    # Unnecessary list comprehension
+    "SIM108",  # if-else block instead of if expression
+    "UP015",   # mode parameter on open()
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+known-first-party = ["nexat-trace"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"

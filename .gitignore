@@ -1,0 +1,14 @@
+.vscode
+.venv
+
+__pycache__
+.ruff_cache
+.pytest_cache
+
+build
+dist
+nexat_trace.egg-info
+*.tar.gz
+wheelhouse
+
+.env

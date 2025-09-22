@@ -1,0 +1,6 @@
+wheel
+setuptools
+matplotlib
+cython
+ruff
+build

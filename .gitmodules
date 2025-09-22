@@ -1,0 +1,3 @@
+[submodule "pydubins"]
+	path = pydubins
+	url = https://github.com/rdesc/pydubins.git
