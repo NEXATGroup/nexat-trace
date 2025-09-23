@@ -64,7 +64,13 @@ thread.join()
 
 route = planner.get_route()
 
+# print sums of turn maneuvers in route
 print(route.turns)
+
+# print any warnings or messages that occurred while planning
+# see planning_messages.py for more info
+print("Route warnings:")
+print(planner.pop_messages())
 
 pg.plot_linestring_rainbow(route.get_linestring(), 1)
 pg.show_plot()
