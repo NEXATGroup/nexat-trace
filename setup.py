@@ -46,7 +46,7 @@ setup(
     name = "nexat-trace",
     version = parsed_version,
     author = "Fabian Tepe",
-    author_email = "f.tepe@nexat.de",
+    author_email = "fabiantepe1.2@gmail.com",
     description = "Nexat Terrain Routing and Coverage Engine",
     long_description = long_description,
     long_description_content_type = "text/markdown",
