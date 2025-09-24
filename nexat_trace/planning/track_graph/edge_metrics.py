@@ -1,5 +1,3 @@
-import math
-
 from nexat_trace.shared.weights import Weights
 
 

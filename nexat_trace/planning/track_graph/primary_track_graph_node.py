@@ -242,11 +242,11 @@ class PrimaryTrackGraphNode(TrackGraphNode):
         # if heuristic_corridor_angle > 0: Estimate working corridor error by angle heuristic
         theta = route_params.weights.heuristic_corridor_angle
 
-        if metrics.angle > 0.0 and theta > 0:
+        if metrics.angle > 0.0 and 0 < theta < 1:
 
             angle = abs(gt.angle_between_lines(line1, line3) / pi)
 
-            if ((metrics.angle > theta or angle > theta)):
+            if (metrics.angle > theta or angle > theta):
 
                 # normalize corridor error to [0,1]
                 a = (angle - theta) / (1 - theta)

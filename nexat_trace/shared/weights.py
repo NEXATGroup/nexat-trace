@@ -26,7 +26,7 @@ class Weights:
 
     corridor_error_cost: cost += corridor_error_cost if detected,
     heuristic_corridor_angle: 0 -> working corridor calculation by safe zone
-                              ]0,1] -> corridor calculation by angle estimation where the float denotes maximum angle
+                              ]0,1[ -> corridor calculation by angle estimation where the float denotes maximum angle
 
     missed_path_penalty: distance_cost = distance_cost + self.missed_path_share * weights.missed_path_penalty
     different_block_penalty: cost += different_block_penalty if calculating cost between different blocks
@@ -133,7 +133,7 @@ class Weights:
         new.headland_cost_exponent = self.headland_cost_exponent
         new.headland_distance_factor = self.headland_distance_factor
         new.corridor_error_cost = self.corridor_error_cost
-        new.heuristic_corridor_angle =  self.heuristic_corridor_angle
+        new.heuristic_corridor_angle = self.heuristic_corridor_angle
         new.missed_path_penalty = self.missed_path_penalty
         new.different_block_penalty = self.different_block_penalty
         new.global_cost_offset = self.global_cost_offset

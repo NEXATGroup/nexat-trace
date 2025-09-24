@@ -1,11 +1,10 @@
 from typing import Dict, Tuple
 
-from shapely import LineString, Point
+from shapely import Point
 from shapely.geometry.base import BaseGeometry
 
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.shared.config import RoutePlanningConfig
-from nexat_trace.util import geom_tools as gt
 from nexat_trace.util import plot_geometry as pg
 
 
