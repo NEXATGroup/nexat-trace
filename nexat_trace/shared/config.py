@@ -156,6 +156,7 @@ class RoutePlanningConfig:
             headland_distance_factor=1.5,
             headland_cost_exponent=1,
             corridor_error_cost=200.0,
+            heuristic_corridor_angle=0,
             global_cost_offset=0.0,
             global_cost_gain=1.0
         )
@@ -389,6 +390,7 @@ class RoutePlanningConfig:
             data["weights"]["headland_distance_factor"],
             data["weights"]["headland_cost_exponent"],
             data["weights"]["corridor_error_cost"],
+            data["weights"]["heuristic_corridor_angle"],
             data["weights"]["missed_path_penalty"],
             data["weights"]["different_block_penalty"],
             data["weights"]["global_cost_offset"],

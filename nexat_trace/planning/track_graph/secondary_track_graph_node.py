@@ -47,9 +47,9 @@ class SecondaryTrackGraphNode(TrackGraphNode):
             self,
             primary: TrackGraphNode,
             secondary_neighbor: TrackGraphNode,
-            route_params: RoutePlanningConfig) -> bool:
+            route_params: RoutePlanningConfig | None = None) -> bool:
         """
-        Checks if a curve from given primary to secondary neighbor is possible.
+            Checks if a curve from given primary to secondary neighbor is possible.
         """
 
         l1 = LineString([self.position, secondary_neighbor.position])
@@ -66,12 +66,17 @@ class SecondaryTrackGraphNode(TrackGraphNode):
 
         ab_line: LineString = primary.get_ab_line()
 
-        safe_zone_line = LineString(
-            [
-                ab_line.interpolate(0.4, True),
-                ab_line.interpolate(0.6, True)
-            ]
-        )
-        safe_zone = safe_zone_line.buffer(route_params.vehicle_turning_radius * 2, cap_style="flat", join_style="mitre")
+        # if heuristic_corridor_angle == 0 (default value): Perform exact working corridor error calculation
+        if route_params.weights.heuristic_corridor_angle:
 
-        return not (l1.intersects(safe_zone) or l2.intersects(safe_zone))
+            safe_zone_line = LineString(
+                [
+                    ab_line.interpolate(0.4, True),
+                    ab_line.interpolate(0.6, True)
+                ]
+            )
+            safe_zone = safe_zone_line.buffer(route_params.vehicle_turning_radius * 2, cap_style="flat", join_style="mitre")
+
+            return not (l1.intersects(safe_zone) or l2.intersects(safe_zone))
+        
+        return True

@@ -88,21 +88,14 @@ class TrackGraphNode:
     def calculate_metrics(
             self,
             other,
-            route_params: RoutePlanningConfig,
-            line1: LineString | None = None,
-            line2: LineString | None = None):
+            route_params: RoutePlanningConfig):
         """
-        Calculates metrics from self to other track graph node.
-
-        Uses given route params and optional line segments. 'line1' and 'line2' should represent the AB line and the headland
-        segment if applicable.
+        Calculates metrics from self to other track graph node using given route params.
         """
         metrics = EdgeMetrics()
         metrics.distance = self.distance_to(other)
         if self.ring_index != 0 and other.ring_index != 0:
             metrics.distance *= 2
-        if line1 is not None and line2 is not None:
-            metrics.angle = abs(gt.angle_between_lines(line1, line2))
 
         # determine the speed
         nexat_speed = get_nexat_speed_on_angle(metrics.angle, route_params)

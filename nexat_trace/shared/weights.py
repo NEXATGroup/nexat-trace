@@ -25,6 +25,9 @@ class Weights:
     ----------------
 
     corridor_error_cost: cost += corridor_error_cost if detected,
+    heuristic_corridor_angle: 0 -> working corridor calculation by safe zone
+                              ]0,1] -> corridor calculation by angle estimation where the float denotes maximum angle
+
     missed_path_penalty: distance_cost = distance_cost + self.missed_path_share * weights.missed_path_penalty
     different_block_penalty: cost += different_block_penalty if calculating cost between different blocks
 
@@ -46,6 +49,7 @@ class Weights:
             headland_distance_factor = 1.5,
             headland_cost_exponent = 1,
             corridor_error_cost = 200,
+            heuristic_corridor_angle = 0,
             missed_path_penalty = 1000.0,
             different_block_penalty = 500.0,
             global_cost_offset = 0.0,
@@ -66,6 +70,7 @@ class Weights:
 
         # route weights
         weights.corridor_error_cost = float(corridor_error_cost)
+        weights.heuristic_corridor_angle = float(heuristic_corridor_angle)
         weights.missed_path_penalty = float(missed_path_penalty)
         weights.different_block_penalty = float(different_block_penalty)
 
@@ -89,6 +94,7 @@ class Weights:
 
             # route weights
             self.corridor_error_cost = 0.0
+            self.heuristic_corridor_angle = 0.0
             self.missed_path_penalty = 1000
             self.different_block_penalty = 0
 
@@ -108,6 +114,7 @@ class Weights:
 
             # route weights
             self.corridor_error_cost = 0.0
+            self.heuristic_corridor_angle = 0.0
             self.missed_path_penalty = 1000
             self.different_block_penalty = 0
 
@@ -120,16 +127,17 @@ class Weights:
         Returns a deep copy of the instance.
         """
         new = Weights()
-        new.corridor_error_cost = self.corridor_error_cost
-        new.missed_path_penalty = self.missed_path_penalty
-        new.different_block_penalty = self.different_block_penalty
-        new.global_cost_gain = self.global_cost_gain
-        new.global_cost_offset = self.global_cost_offset
+        new.turn_cost_gain = self.turn_cost_gain
+        new.turn_cost_exponent = self.turn_cost_exponent
+        new.turn_cost_angle_exponent = self.turn_cost_angle_exponent
         new.headland_cost_exponent = self.headland_cost_exponent
         new.headland_distance_factor = self.headland_distance_factor
-        new.turn_cost_angle_exponent = self.turn_cost_angle_exponent
-        new.turn_cost_exponent = self.turn_cost_exponent
-        new.turn_cost_gain = self.turn_cost_gain
+        new.corridor_error_cost = self.corridor_error_cost
+        new.heuristic_corridor_angle =  self.heuristic_corridor_angle
+        new.missed_path_penalty = self.missed_path_penalty
+        new.different_block_penalty = self.different_block_penalty
+        new.global_cost_offset = self.global_cost_offset
+        new.global_cost_gain = self.global_cost_gain
         return new
 
     def __str__(self) -> str:
@@ -143,9 +151,9 @@ class Weights:
         ret += f"headland_distance_factor: {self.headland_distance_factor}\n"
         ret += f"headland_cost_exponent: {self.headland_cost_exponent}\n"
         ret += f"corridor_error_cost: {self.corridor_error_cost}\n"
+        ret += f"heuristic_corridor_angle: {self.heuristic_corridor_angle}\n"
         ret += f"missed_path_penalty: {self.missed_path_penalty}\n"
         ret += f"different_block_penalty: {self.different_block_penalty}\n"
         ret += f"global_cost_offset: {self.global_cost_offset}\n"
         ret += f"global_cost_gain: {self.global_cost_gain}\n"
-        ret += f"turn_cost_gain: {self.turn_cost_gain}\n"
         return ret
