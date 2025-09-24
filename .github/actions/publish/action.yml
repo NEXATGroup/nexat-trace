@@ -1,0 +1,27 @@
+# .github/actions/publish/action.yml
+name: "Publish to PyPI"
+description: "Publish built wheels to PyPI"
+inputs:
+  pypi-token:
+    description: "PyPI API token"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: wheels-ubuntu-22.04
+        path: dist
+    - uses: actions/download-artifact@v4
+      with:
+        name: wheels-windows-latest
+        path: dist
+    - uses: actions/download-artifact@v4
+      with:
+        name: wheels-macos-latest
+        path: dist
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ inputs.pypi-token }}

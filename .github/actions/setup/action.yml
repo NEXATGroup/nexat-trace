@@ -1,0 +1,27 @@
+# .github/actions/setup/action.yml
+name: "Setup Python"
+description: "Set up Python with cache and install dependencies"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10.12'
+
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('install_requirements.txt', 'dev_requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - run: python -m pip install --upgrade pip
+      shell: bash
+
+    - run: pip install -r install_requirements.txt -r dev_requirements.txt
+      shell: bash
+
+    - run: pip install -e .
+      shell: bash

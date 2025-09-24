@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/version
+        with:
+          part: patch
+
+  wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: version
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+      - uses: ./.github/actions/wheels
+
+  publish:
+    runs-on: ubuntu-22.04
+    needs: wheels
+    steps:
+      - uses: ./.github/actions/publish
+        with:
+          pypi-token: ${{ secrets.PYPI_API_TOKEN }}

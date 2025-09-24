@@ -1,0 +1,24 @@
+# .github/actions/wheels/action.yml
+name: "Build Wheels"
+description: "Build wheels using cibuildwheel"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.10.12"
+
+    - run: pip install cibuildwheel
+      shell: bash
+
+    - name: Build wheels
+      run: cibuildwheel --output-dir wheelhouse
+      shell: bash
+      env:
+        CIBW_SKIP: "pp*"
+        CIBW_BUILD: "cp310-*"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: wheels-${{ runner.os }}
+        path: wheelhouse/*.whl
