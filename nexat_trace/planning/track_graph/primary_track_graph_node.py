@@ -90,8 +90,15 @@ class PrimaryTrackGraphNode(TrackGraphNode):
                 line2,
                 line3
             )
-
-            # if not metrics.working_corridor_error:
+            if inner_border is not None and not 0 < route_params.heuristic_corridor_angle < 1:
+                self.check_working_corridor_for_metrics(
+                    secondary,
+                    metrics,
+                    line1,
+                    inner_border,
+                    headland,
+                    planner_config
+                )
             reverse_metrics = metrics.copy()
 
             self._link_secondary(
@@ -240,7 +247,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             metrics.angle = abs(gt.angle_between_lines(line1, line2) / pi)
 
         # if heuristic_corridor_angle > 0: Estimate working corridor error by angle heuristic
-        theta = route_params.weights.heuristic_corridor_angle
+        theta = route_params.heuristic_corridor_angle
 
         if metrics.angle > 0.0 and 0 < theta < 1:
 

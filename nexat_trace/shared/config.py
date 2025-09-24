@@ -156,7 +156,6 @@ class RoutePlanningConfig:
             headland_distance_factor=1.5,
             headland_cost_exponent=1,
             corridor_error_cost=200.0,
-            heuristic_corridor_angle=0,
             global_cost_offset=0.0,
             global_cost_gain=1.0
         )
@@ -253,6 +252,7 @@ class RoutePlanningConfig:
         self.speed_curve_angle_threshold = 0.0001
 
         self.direction_change_extension_distance = 10.0  # m
+        self.heuristic_corridor_angle = 0.0  # fraction of π rad (0.5π = 90°)
 
         self.direct_curve_link_distance = 25.0  # m
 
@@ -296,6 +296,7 @@ class RoutePlanningConfig:
         new.vehicle_speed_curve = self.vehicle_speed_curve
         new.speed_curve_angle_threshold = self.speed_curve_angle_threshold
         new.direction_change_extension_distance = self.direction_change_extension_distance
+        new.heuristic_corridor_angle = self.heuristic_corridor_angle
         new.direct_curve_link_distance = self.direct_curve_link_distance
         new.delay_on_direction_change = self.delay_on_direction_change
         new.min_ab_line_length = self.min_ab_line_length
@@ -390,7 +391,6 @@ class RoutePlanningConfig:
             data["weights"]["headland_distance_factor"],
             data["weights"]["headland_cost_exponent"],
             data["weights"]["corridor_error_cost"],
-            data["weights"]["heuristic_corridor_angle"],
             data["weights"]["missed_path_penalty"],
             data["weights"]["different_block_penalty"],
             data["weights"]["global_cost_offset"],

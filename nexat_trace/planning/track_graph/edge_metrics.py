@@ -19,7 +19,7 @@ class EdgeMetrics:
         # measurements
         self.distance = 0.0  # m
         self.time = 0.0  # s
-        self.angle = 0.0  # pi
+        self.angle = 0.0  # fraction of π rad (0.5π = 90°)
 
         # further cost calculation parameters
         self.cost_offset = 0.0
