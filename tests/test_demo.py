@@ -1,5 +1,7 @@
-import pytest
 
-def always_true():
+def test_always_true():
+    """
+    Demo Test for Pipeline.
+    """
 
-    assert True == True
+    assert True

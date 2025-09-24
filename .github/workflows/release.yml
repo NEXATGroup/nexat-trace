@@ -1,8 +1,13 @@
 name: Release
 
+#on:
+#  push:
+#    branches: [ "main" ]
+
+
 on:
-  push:
-    branches: [ "main" ]
+  pull_request:
+    branches: [ "dev", "main" ]
 
 jobs:
   version:
@@ -29,10 +34,10 @@ jobs:
           submodules: true
       - uses: ./.github/actions/wheels
 
-  publish:
-    runs-on: ubuntu-22.04
-    needs: wheels
-    steps:
-      - uses: ./.github/actions/publish
-        with:
-          pypi-token: ${{ secrets.PYPI_API_TOKEN }}
+  #publish:
+  #  runs-on: ubuntu-22.04
+  #  needs: wheels
+  #  steps:
+  #    - uses: ./.github/actions/publish
+  #      with:
+  #        pypi-token: ${{ secrets.PYPI_API_TOKEN }}
