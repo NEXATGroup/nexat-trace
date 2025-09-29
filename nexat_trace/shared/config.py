@@ -328,6 +328,7 @@ class RoutePlanningConfig:
             f"  working_mask_start={self.working_mask_start},\n"
             f"  post_processing_steps={self.post_processing_steps},\n"
             f"  robust_curve_calculation_only={self.robust_curve_calculation_only},\n"
+            f"  heuristic_corridor_angle={self.heuristic_corridor_angle}\n"
 
             f"  _track_width={self._track_width},\n"
 
@@ -413,6 +414,7 @@ class RoutePlanningConfig:
         for entry in data["post_processing_steps"].items():
             new.post_processing_steps[PostSteps[entry[0]]] = bool(entry[1])
         new.robust_curve_calculation_only = data["robust_curve_calculation_only"]
+        new.heuristic_corridor_angle = data["heuristic_corridor_angle"]
         new.debug_plot_field = data["debug_plot_field"]
         new.debug_plot_track_graph = data["debug_plot_track_graph"]
         new.debug_prints = data["debug_prints"]
