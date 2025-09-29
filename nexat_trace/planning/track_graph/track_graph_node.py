@@ -1,4 +1,5 @@
 from typing import Dict, Tuple
+from math import pi
 
 from shapely import Point
 from shapely.geometry.base import BaseGeometry
@@ -97,8 +98,8 @@ class TrackGraphNode:
             metrics.distance *= 2
 
         # determine the speed
-        nexat_speed = get_nexat_speed_on_angle(metrics.angle, route_params)
-        metrics.time = metrics.distance / nexat_speed
+        vehicle_speed = get_vehicle_speed_on_angle(metrics.angle, route_params)
+        metrics.time = metrics.distance / vehicle_speed
 
         return metrics
 
@@ -109,16 +110,16 @@ class TrackGraphNode:
         pg.plot_point(self.position, marker, markersize, color)
 
 
-def get_nexat_speed_on_angle(angle: float, route_params: RoutePlanningConfig):
+def get_vehicle_speed_on_angle(angle: float, route_params: RoutePlanningConfig):
     """
-    Returns approximate nexat speed on given curve angle in radians.
+    Returns approximate vehicle speed on given curve angle in radians.
     """
     if not isinstance(angle, float):
         pass
-    angle = abs(angle)
-    nexat_speed = route_params.vehicle_speed_curve
+    angle = abs(angle * pi)
+    vehicle_speed = route_params.vehicle_speed_curve
     if angle < route_params.speed_curve_angle_threshold:
-        nexat_speed += (
+        vehicle_speed += (
             (route_params.speed_curve_angle_threshold - angle) / route_params.speed_curve_angle_threshold
         ) * (route_params.vehicle_speed_straight - route_params.vehicle_speed_curve)
-    return nexat_speed
+    return vehicle_speed

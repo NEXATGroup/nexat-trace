@@ -47,7 +47,7 @@ class SecondaryTrackGraphNode(TrackGraphNode):
             self,
             primary: TrackGraphNode,
             secondary_neighbor: TrackGraphNode,
-            route_params: RoutePlanningConfig | None = None) -> bool:
+            route_params: RoutePlanningConfig) -> bool:
         """
         Checks if a curve from given primary to secondary neighbor is possible.
         """

@@ -82,7 +82,7 @@ class RoutePlanningConfig:
         Dictionary mapping of post processing step and boolean value wether or not to run step after route construction
     - robust_curve_calculation_only:
         Wether or not to only use robust curve calculation functions (runs slower)
-
+        
     Other Parameters
     ----------------
 
@@ -106,7 +106,9 @@ class RoutePlanningConfig:
         Length in m below which ab lines on the track system are discarded
     - disable_pi_curves:
         Disables pi / k turn maneuvers
-
+    - heuristic_corridor_angle
+        Threshold angle (fraction of π rad: 0.5π = 90°) beyond which a curve is considered too sharp 
+        for the vehicle to pass without triggering a working corridor error.
 
     Debugging Parameters
     --------------------
