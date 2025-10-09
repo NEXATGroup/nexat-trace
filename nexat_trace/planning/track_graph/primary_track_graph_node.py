@@ -111,12 +111,14 @@ class PrimaryTrackGraphNode(TrackGraphNode):
         if intersecting_secondary.check_drivability(self, secondary, route_params):
             line2 = LineString([secondary.position, secondary.back_secondary.position])
             line3 = LineString([intersecting_secondary.front_secondary.position, secondary.position])
+            handle_linking_secondary(secondary, line2, line3)
             got_one_secondary = True
 
         secondary = intersecting_secondary.front_secondary
         if intersecting_secondary.check_drivability(self, secondary, route_params):
             line2 = LineString([secondary.position, secondary.front_secondary.position])
             line3 = LineString([intersecting_secondary.back_secondary.position, secondary.position])
+            handle_linking_secondary(secondary, line2, line3)
             got_one_secondary = True
 
         if not got_one_secondary:
@@ -230,6 +232,17 @@ class PrimaryTrackGraphNode(TrackGraphNode):
         segment if applicable.
         """
 
+        metrics = super().calculate_metrics(other, route_params)
+
+        if isinstance(other, PrimaryTrackGraphNode) and other != self.primary_neighbor:
+            metrics.is_neighbor_curve = True
+            # distance penalty
+            metrics.distance *= route_params.neighbor_curve_distance_multiplier
+            # distance of pi turn maneuver
+            metrics.distance += pi * route_params.vehicle_turning_radius  # 2 * 1/4 circle circumference
+            metrics.distance += route_params._track_width * 2.0
+            metrics.distance += route_params.direction_change_extension_distance * 2.0
+
         if line1 is not None and line2 is not None:
             metrics.angle = abs(gt.angle_between_lines(line1, line2) / pi)
 
@@ -248,16 +261,5 @@ class PrimaryTrackGraphNode(TrackGraphNode):
 
                 # Combined error margin
                 metrics.working_corridor_error = max(0, (a + b - abs(a * b))) ** 0.5
-
-        metrics = super().calculate_metrics(other, route_params)
-
-        if isinstance(other, PrimaryTrackGraphNode) and other != self.primary_neighbor:
-            metrics.is_neighbor_curve = True
-            # distance penalty
-            metrics.distance *= route_params.neighbor_curve_distance_multiplier
-            # distance of pi turn maneuver
-            metrics.distance += pi * route_params.vehicle_turning_radius  # 2 * 1/4 circle circumference
-            metrics.distance += route_params._track_width * 2.0
-            metrics.distance += route_params.direction_change_extension_distance * 2.0
 
         return metrics

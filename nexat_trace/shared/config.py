@@ -107,7 +107,7 @@ class RoutePlanningConfig:
     - disable_pi_curves:
         Disables pi / k turn maneuvers
     - heuristic_corridor_angle
-        Threshold angle (fraction of π rad: 0.5π = 90°) beyond which a curve is considered too sharp 
+        Threshold angle (fraction of π rad: 0.5π = 90°) beyond which a curve is considered too sharp
         for the vehicle to pass without triggering a working corridor error.
 
     Debugging Parameters
