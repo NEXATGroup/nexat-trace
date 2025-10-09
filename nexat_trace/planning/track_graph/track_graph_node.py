@@ -1,5 +1,5 @@
-from typing import Dict, Tuple
 from math import pi
+from typing import Dict, Tuple
 
 from shapely import Point
 from shapely.geometry.base import BaseGeometry
@@ -114,8 +114,6 @@ def get_vehicle_speed_on_angle(angle: float, route_params: RoutePlanningConfig):
     """
     Returns approximate vehicle speed on given curve angle in radians.
     """
-    if not isinstance(angle, float):
-        pass
     angle = abs(angle * pi)
     vehicle_speed = route_params.vehicle_speed_curve
     if angle < route_params.speed_curve_angle_threshold:

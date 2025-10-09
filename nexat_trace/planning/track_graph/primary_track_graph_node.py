@@ -228,8 +228,8 @@ class PrimaryTrackGraphNode(TrackGraphNode):
         """
         Calculates metrics from self to other track graph node.
 
-        Uses given route params and optional line segments. 'line1' and 'line2' should represent the AB line and the headland
-        segment if applicable.
+        Uses given route params and optional line segments. 'line1', 'line2' and 'line3' should represent the AB line and the
+        headland segment if applicable.
         """
 
         metrics = super().calculate_metrics(other, route_params)
