@@ -93,15 +93,26 @@ class TrackGraphNode:
         Calculates metrics from self to other track graph node using given route params.
         """
         metrics = EdgeMetrics()
+
+        self.calculate_distance(metrics, other)
+        self.calculate_speed(metrics, route_params)
+
+        return metrics
+    
+    def calculate_distance(self, metrics: EdgeMetrics, other) -> None:
+        """
+        Calculates distance for given edge Metrics.
+        """
         metrics.distance = self.distance_to(other)
         if self.ring_index != 0 and other.ring_index != 0:
             metrics.distance *= 2
-
-        # determine the speed
+    
+    def calculate_speed(self, metrics: EdgeMetrics, route_params: RoutePlanningConfig) -> None:
+        """
+        Calculates speeed for given edge Metrics.
+        """
         vehicle_speed = get_vehicle_speed_on_angle(metrics.angle, route_params)
         metrics.time = metrics.distance / vehicle_speed
-
-        return metrics
 
     def plot(self, color="green", marker="0", markersize=15):
         """

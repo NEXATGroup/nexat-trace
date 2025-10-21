@@ -232,7 +232,9 @@ class PrimaryTrackGraphNode(TrackGraphNode):
         headland segment if applicable.
         """
 
-        metrics = super().calculate_metrics(other, route_params)
+        # distance calculation
+        metrics = EdgeMetrics()
+        self.calculate_distance(metrics, other)
 
         if isinstance(other, PrimaryTrackGraphNode) and other != self.primary_neighbor:
             metrics.is_neighbor_curve = True
@@ -243,8 +245,11 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             metrics.distance += route_params._track_width * 2.0
             metrics.distance += route_params.direction_change_extension_distance * 2.0
 
+        # angle calculation
         if line1 is not None and line2 is not None:
             metrics.angle = abs(gt.angle_between_lines(line1, line2) / pi)
+
+        self.calculate_speed(metrics, route_params)
 
         # if heuristic_corridor_angle > 0: Estimate working corridor error by angle heuristic
         theta = route_params.heuristic_corridor_angle
