@@ -1,11 +1,11 @@
+from math import pi
 from typing import Dict, Tuple
 
-from shapely import LineString, Point
+from shapely import Point
 from shapely.geometry.base import BaseGeometry
 
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.shared.config import RoutePlanningConfig
-from nexat_trace.util import geom_tools as gt
 from nexat_trace.util import plot_geometry as pg
 
 
@@ -88,27 +88,31 @@ class TrackGraphNode:
     def calculate_metrics(
             self,
             other,
-            route_params: RoutePlanningConfig,
-            line1: LineString | None = None,
-            line2: LineString | None = None):
+            route_params: RoutePlanningConfig):
         """
-        Calculates metrics from self to other track graph node.
-
-        Uses given route params and optional line segments. 'line1' and 'line2' should represent the AB line and the headland
-        segment if applicable.
+        Calculates metrics from self to other track graph node using given route params.
         """
         metrics = EdgeMetrics()
+
+        self.calculate_distance(metrics, other)
+        self.calculate_speed(metrics, route_params)
+
+        return metrics
+    
+    def calculate_distance(self, metrics: EdgeMetrics, other) -> None:
+        """
+        Calculates distance for given edge Metrics.
+        """
         metrics.distance = self.distance_to(other)
         if self.ring_index != 0 and other.ring_index != 0:
             metrics.distance *= 2
-        if line1 is not None and line2 is not None:
-            metrics.angle = abs(gt.angle_between_lines(line1, line2))
-
-        # determine the speed
-        nexat_speed = get_nexat_speed_on_angle(metrics.angle, route_params)
-        metrics.time = metrics.distance / nexat_speed
-
-        return metrics
+    
+    def calculate_speed(self, metrics: EdgeMetrics, route_params: RoutePlanningConfig) -> None:
+        """
+        Calculates speeed for given edge Metrics.
+        """
+        vehicle_speed = get_vehicle_speed_on_angle(metrics.angle, route_params)
+        metrics.time = metrics.distance / vehicle_speed
 
     def plot(self, color="green", marker="0", markersize=15):
         """
@@ -117,16 +121,14 @@ class TrackGraphNode:
         pg.plot_point(self.position, marker, markersize, color)
 
 
-def get_nexat_speed_on_angle(angle: float, route_params: RoutePlanningConfig):
+def get_vehicle_speed_on_angle(angle: float, route_params: RoutePlanningConfig):
     """
-    Returns approximate nexat speed on given curve angle in radians.
+    Returns approximate vehicle speed on given curve angle in radians.
     """
-    if not isinstance(angle, float):
-        pass
-    angle = abs(angle)
-    nexat_speed = route_params.vehicle_speed_curve
+    angle = abs(angle * pi)
+    vehicle_speed = route_params.vehicle_speed_curve
     if angle < route_params.speed_curve_angle_threshold:
-        nexat_speed += (
+        vehicle_speed += (
             (route_params.speed_curve_angle_threshold - angle) / route_params.speed_curve_angle_threshold
         ) * (route_params.vehicle_speed_straight - route_params.vehicle_speed_curve)
-    return nexat_speed
+    return vehicle_speed

@@ -120,16 +120,16 @@ class Weights:
         Returns a deep copy of the instance.
         """
         new = Weights()
+        new.turn_cost_gain = self.turn_cost_gain
+        new.turn_cost_exponent = self.turn_cost_exponent
+        new.turn_cost_angle_exponent = self.turn_cost_angle_exponent
+        new.headland_cost_exponent = self.headland_cost_exponent
+        new.headland_distance_factor = self.headland_distance_factor
         new.corridor_error_cost = self.corridor_error_cost
         new.missed_path_penalty = self.missed_path_penalty
         new.different_block_penalty = self.different_block_penalty
-        new.global_cost_gain = self.global_cost_gain
         new.global_cost_offset = self.global_cost_offset
-        new.headland_cost_exponent = self.headland_cost_exponent
-        new.headland_distance_factor = self.headland_distance_factor
-        new.turn_cost_angle_exponent = self.turn_cost_angle_exponent
-        new.turn_cost_exponent = self.turn_cost_exponent
-        new.turn_cost_gain = self.turn_cost_gain
+        new.global_cost_gain = self.global_cost_gain
         return new
 
     def __str__(self) -> str:
@@ -147,5 +147,4 @@ class Weights:
         ret += f"different_block_penalty: {self.different_block_penalty}\n"
         ret += f"global_cost_offset: {self.global_cost_offset}\n"
         ret += f"global_cost_gain: {self.global_cost_gain}\n"
-        ret += f"turn_cost_gain: {self.turn_cost_gain}\n"
         return ret

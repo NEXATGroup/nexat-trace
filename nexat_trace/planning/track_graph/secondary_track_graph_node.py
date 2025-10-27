@@ -72,6 +72,6 @@ class SecondaryTrackGraphNode(TrackGraphNode):
                 ab_line.interpolate(0.6, True)
             ]
         )
-        safe_zone = safe_zone_line.buffer(route_params.vehicle_turning_radius * 2, cap_style="flat", join_style="mitre")
+        safe_zone = safe_zone_line.buffer(route_params.vehicle_turning_radius * 2, cap_style = "flat", join_style = "mitre")
 
         return not (l1.intersects(safe_zone) or l2.intersects(safe_zone))

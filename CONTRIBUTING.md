@@ -14,7 +14,7 @@ Please use one of the templates if it fits your issue.
 
 - Fork the repository and create a branch with your changes.
 - Update documentation as needed.
-- Submit a pull request with a clear description of your changes.
+- Submit a pull request to the ```dev``` branch with a clear description of your changes.
 
 
 ## Coding guidelines
