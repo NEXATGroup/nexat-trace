@@ -176,7 +176,9 @@ def connect_ab_lines(
             )
             headland_path_between = LineString(circled_coords)
 
-        if headland_path_between.length > headland_shape.length * 0.95:
+        threshold = 1.95 if circle_cutout else 0.95
+
+        if headland_path_between.length > headland_shape.length * threshold:
             # curve1 ends after the start of curve2
             headland_segment = gt.get_substring_on_linearring(
                 headland_shape,
