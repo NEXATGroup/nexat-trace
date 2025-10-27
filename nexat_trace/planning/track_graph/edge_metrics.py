@@ -1,5 +1,3 @@
-import math
-
 from nexat_trace.shared.weights import Weights
 
 
@@ -21,7 +19,7 @@ class EdgeMetrics:
         # measurements
         self.distance = 0.0  # m
         self.time = 0.0  # s
-        self.angle = 0.0  # rad
+        self.angle = 0.0  # fraction of π rad (0.5π = 90°)
 
         # further cost calculation parameters
         self.cost_offset = 0.0
@@ -115,7 +113,7 @@ class EdgeMetrics:
 
         turn_cost = 0.0
         if self.angle > 0.0:
-            angle_penalty = ((self.angle * (2.0 / math.pi)) ** weights.turn_cost_angle_exponent)
+            angle_penalty = ((self.angle * 2.0) ** weights.turn_cost_angle_exponent)
             turn_cost += angle_penalty
             turn_cost *= weights.turn_cost_gain
             turn_cost = turn_cost ** weights.turn_cost_exponent

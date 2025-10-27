@@ -82,7 +82,7 @@ class RoutePlanningConfig:
         Dictionary mapping of post processing step and boolean value wether or not to run step after route construction
     - robust_curve_calculation_only:
         Wether or not to only use robust curve calculation functions (runs slower)
-
+        
     Other Parameters
     ----------------
 
@@ -106,7 +106,9 @@ class RoutePlanningConfig:
         Length in m below which ab lines on the track system are discarded
     - disable_pi_curves:
         Disables pi / k turn maneuvers
-
+    - heuristic_corridor_angle
+        Threshold angle (fraction of π rad: 0.5π = 90°) beyond which a curve is considered too sharp
+        for the vehicle to pass without triggering a working corridor error.
 
     Debugging Parameters
     --------------------
@@ -252,6 +254,7 @@ class RoutePlanningConfig:
         self.speed_curve_angle_threshold = 0.0001
 
         self.direction_change_extension_distance = 10.0  # m
+        self.heuristic_corridor_angle = 0.0  # fraction of π rad (0.5π = 90°)
 
         self.direct_curve_link_distance = 25.0  # m
 
@@ -295,6 +298,7 @@ class RoutePlanningConfig:
         new.vehicle_speed_curve = self.vehicle_speed_curve
         new.speed_curve_angle_threshold = self.speed_curve_angle_threshold
         new.direction_change_extension_distance = self.direction_change_extension_distance
+        new.heuristic_corridor_angle = self.heuristic_corridor_angle
         new.direct_curve_link_distance = self.direct_curve_link_distance
         new.delay_on_direction_change = self.delay_on_direction_change
         new.min_ab_line_length = self.min_ab_line_length
@@ -324,6 +328,7 @@ class RoutePlanningConfig:
             f"  working_mask_start={self.working_mask_start},\n"
             f"  post_processing_steps={self.post_processing_steps},\n"
             f"  robust_curve_calculation_only={self.robust_curve_calculation_only},\n"
+            f"  heuristic_corridor_angle={self.heuristic_corridor_angle}\n"
 
             f"  _track_width={self._track_width},\n"
 
@@ -409,6 +414,7 @@ class RoutePlanningConfig:
         for entry in data["post_processing_steps"].items():
             new.post_processing_steps[PostSteps[entry[0]]] = bool(entry[1])
         new.robust_curve_calculation_only = data["robust_curve_calculation_only"]
+        new.heuristic_corridor_angle = data["heuristic_corridor_angle"]
         new.debug_plot_field = data["debug_plot_field"]
         new.debug_plot_track_graph = data["debug_plot_track_graph"]
         new.debug_prints = data["debug_prints"]
