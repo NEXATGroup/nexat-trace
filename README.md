@@ -9,13 +9,9 @@ A sophisticated complete coverage path planning library developed for controlled
 
 This library excels in robust & intelligent route optimization and curve planning for complex field geometries.
 
-[video of TRACE example]
-
 ### Flexible route / task specification
 
 The route planner has a lot of options and parameters that change the way the route is planned and how the curves are calculated.
-
-[image of route with working width]
 
 Planner parameters include:
 - Start / finish location
@@ -28,11 +24,7 @@ Planner parameters include:
 
 ## Installation
 
-Releases of this library are hosted on pip
-
-```
-pip install nexat-trace
-```
+Releases of this library are soon to be hosted on pip
 
 
 ## Usage
