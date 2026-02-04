@@ -16,6 +16,17 @@ runs:
     - run: pip install bump2version
       shell: bash
 
+    - name: Set git identity
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+      shell: bash
+
+    - name: Setup git remote with token
+      run: |
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+      shell: bash
+
     - name: Bump version
       run: |
         bump2version ${{ inputs.part }} --list
