@@ -1,9 +1,12 @@
+# .github/workflows/release.yml
 name: Release
+
+permissions:
+  id-token: write
 
 #on:
 #  push:
 #    branches: [ "main" ]
-
 
 on:
   pull_request:
@@ -34,10 +37,8 @@ jobs:
           submodules: true
       - uses: ./.github/actions/wheels
 
-  #publish:
-  #  runs-on: ubuntu-22.04
-  #  needs: wheels
-  #  steps:
-  #    - uses: ./.github/actions/publish
-  #      with:
-  #        pypi-token: ${{ secrets.PYPI_API_TOKEN }}
+  publish:
+    runs-on: ubuntu-22.04
+    needs: wheels
+    steps:
+      - uses: ./.github/actions/publish
