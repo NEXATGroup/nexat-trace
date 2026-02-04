@@ -12,6 +12,7 @@ runs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
         ref: feature/GHActions
 
     - uses: actions/setup-python@v5
@@ -25,11 +26,6 @@ runs:
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-      shell: bash
-
-    - name: Setup git remote with token
-      run: |
-        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
       shell: bash
 
     - name: Bump version
