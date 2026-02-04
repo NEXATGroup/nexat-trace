@@ -13,7 +13,11 @@ runs:
       with:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
-        ref: feature/GHActions
+        persist-credentials: true
+
+    - name: Checkout branch
+      run: git checkout ${{ github.ref_name }}
+      shell: bash
 
     - uses: actions/setup-python@v5
       with:
