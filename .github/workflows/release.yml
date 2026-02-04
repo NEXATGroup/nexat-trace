@@ -4,13 +4,9 @@ name: Release
 permissions:
   id-token: write
 
-#on:
-#  push:
-#    branches: [ "main" ]
-
 on:
-  pull_request:
-    branches: [ "dev", "main" ]
+  push:
+    branches: [ "feature/GHActions", "main" ]
 
 jobs:
   version:
