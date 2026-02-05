@@ -12,7 +12,7 @@ runs:
       shell: bash
 
     - name: Build wheels
-      shell: bash
+      shell: ${{ runner.os == 'Windows' && 'cmd' || 'bash' }}
       run: |
         echo "Start building wheels"
         cibuildwheel --output-dir wheelhouse > cibuildwheel.log 2>&1
