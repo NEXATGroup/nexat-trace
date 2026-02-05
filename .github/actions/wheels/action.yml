@@ -15,7 +15,7 @@ runs:
       run: cibuildwheel --output-dir wheelhouse
       shell: bash
       env:
-        CIBW_SKIP: "pp*"
+        CIBW_SKIP: "pp* cp310-win32"
         CIBW_BUILD: "cp310-*"
         CIBW_VERBOSE: "1"
 
