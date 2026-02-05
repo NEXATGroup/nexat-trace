@@ -12,8 +12,16 @@ runs:
       shell: bash
 
     - name: Build wheels
-      run: cibuildwheel --output-dir wheelhouse
       shell: bash
+      run: |
+        echo "Start building wheels"
+        cibuildwheel --output-dir wheelhouse > cibuildwheel.log 2>&1
+        echo "Build finished, printing logs..."
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          cmd.exe /c type cibuildwheel.log
+        else
+          cat cibuildwheel.log
+        fi
       env:
         CIBW_SKIP: "pp* cp310-win32"
         CIBW_BUILD: "cp310-*"
