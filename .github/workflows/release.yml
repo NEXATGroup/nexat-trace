@@ -6,7 +6,7 @@ permissions:
 
 on:
   push:
-    branches: [ "feature/GHAtions", "main" ]
+    branches: [ "feature/GHActions", "main" ]
 
 jobs:
   version:
