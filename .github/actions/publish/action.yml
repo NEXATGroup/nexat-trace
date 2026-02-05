@@ -6,15 +6,15 @@ runs:
   steps:
     - uses: actions/download-artifact@v4
       with:
-        name: wheels-ubuntu-22.04
+        name: wheels-Linux
         path: dist
     - uses: actions/download-artifact@v4
       with:
-        name: wheels-windows-latest
+        name: wheels-Windows
         path: dist
     - uses: actions/download-artifact@v4
       with:
-        name: wheels-macos-latest
+        name: wheels-macOS
         path: dist
 
     - name: Publish to PyPI
