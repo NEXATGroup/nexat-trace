@@ -7,7 +7,6 @@ name: CI
 jobs:
   lint:
     runs-on: ubuntu-22.04
-    environment: Dev
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,7 +16,6 @@ jobs:
 
   tests:
     runs-on: ubuntu-22.04
-    environment: Dev
     needs: lint
     steps:
       - uses: actions/checkout@v4
