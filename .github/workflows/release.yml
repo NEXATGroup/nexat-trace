@@ -6,22 +6,21 @@ permissions:
 
 on:
   push:
-    branches: [ "feature/GHActions", "main" ]
+    branches: [ "main" ]
 
 jobs:
   version:
     runs-on: ubuntu-22.04
+    environment: Prod
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/version
-        with:
-          part: patch
 
   wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    environment: Prod
     needs: version
     strategy:
       matrix:
@@ -35,6 +34,7 @@ jobs:
 
   publish:
     runs-on: ubuntu-22.04
+    environment: Prod
     needs: wheels
     steps:
       - uses: ./.github/actions/publish
