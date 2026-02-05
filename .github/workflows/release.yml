@@ -9,13 +9,6 @@ on:
     branches: [ "feature/GHActions", "main" ]
 
 jobs:
-  version:
-    runs-on: ubuntu-22.04
-    environment: Prod
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
   wheels:
     name: Build wheels on ${{ matrix.os }}
@@ -36,4 +29,7 @@ jobs:
     environment: Prod
     needs: wheels
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/publish
