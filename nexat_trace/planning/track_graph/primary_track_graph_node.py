@@ -82,14 +82,15 @@ class PrimaryTrackGraphNode(TrackGraphNode):
 
         got_one_secondary = False
 
-        def handle_linking_secondary(secondary: TrackGraphNode, line2: LineString):
+        def handle_linking_secondary(secondary: TrackGraphNode, line2: LineString, line3: LineString):
             metrics = self.calculate_metrics(
                 secondary,
                 route_params,
                 line1,
-                line2
+                line2,
+                line3
             )
-            if inner_border is not None:
+            if inner_border is not None and not 0 < route_params.heuristic_corridor_angle < 1:
                 self.check_working_corridor_for_metrics(
                     secondary,
                     metrics,
@@ -108,23 +109,27 @@ class PrimaryTrackGraphNode(TrackGraphNode):
 
         secondary = intersecting_secondary.back_secondary
         if intersecting_secondary.check_drivability(self, secondary, route_params):
-            line2 = LineString([secondary.position, secondary.front_secondary.position])
-            handle_linking_secondary(secondary, line2)
+            line2 = LineString([secondary.position, secondary.back_secondary.position])
+            line3 = LineString([intersecting_secondary.front_secondary.position, secondary.position])
+            handle_linking_secondary(secondary, line2, line3)
             got_one_secondary = True
 
         secondary = intersecting_secondary.front_secondary
         if intersecting_secondary.check_drivability(self, secondary, route_params):
-            line2 = LineString([secondary.position, secondary.back_secondary.position])
-            handle_linking_secondary(secondary, line2)
+            line2 = LineString([secondary.position, secondary.front_secondary.position])
+            line3 = LineString([intersecting_secondary.back_secondary.position, secondary.position])
+            handle_linking_secondary(secondary, line2, line3)
             got_one_secondary = True
 
         if not got_one_secondary:
             secondary1 = intersecting_secondary.back_secondary
-            line2 = LineString([secondary1.position, secondary1.front_secondary.position])
-            m1 = self.calculate_metrics(secondary1, route_params, line1, line2)
+            line2 = LineString([secondary1.position, secondary1.back_secondary.position])
+            line3 = LineString([intersecting_secondary.front_secondary.position, secondary.position])
+            m1 = self.calculate_metrics(secondary1, route_params, line1, line2, line3)
             secondary2 = intersecting_secondary.front_secondary
-            line2 = LineString([secondary2.position, secondary.back_secondary.position])
-            m2 = self.calculate_metrics(secondary2, route_params, line1, line2)
+            line2 = LineString([secondary2.position, secondary.front_secondary.position])
+            line3 = LineString([intersecting_secondary.back_secondary.position, secondary.position])
+            m2 = self.calculate_metrics(secondary2, route_params, line1, line2, line3)
             weights = Weights(Weights.GRAPH_BUILDING)
             if m1.get_cost(weights) < m2.get_cost(weights):
                 self._link_secondary(secondary1, m1)
@@ -218,14 +223,18 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             other: TrackGraphNode,
             route_params: RoutePlanningConfig,
             line1 = None,
-            line2 = None) -> EdgeMetrics:
+            line2 = None,
+            line3 = None) -> EdgeMetrics:
         """
         Calculates metrics from self to other track graph node.
 
-        Uses given route params and optional line segments. 'line1' and 'line2' should represent the AB line and the headland
-        segment if applicable.
+        Uses given route params and optional line segments. 'line1', 'line2' and 'line3' should represent the AB line and the
+        headland segment if applicable.
         """
-        metrics = super().calculate_metrics(other, route_params, line1, line2)
+
+        # distance calculation
+        metrics = EdgeMetrics()
+        self.calculate_distance(metrics, other)
 
         if isinstance(other, PrimaryTrackGraphNode) and other != self.primary_neighbor:
             metrics.is_neighbor_curve = True
@@ -235,5 +244,27 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             metrics.distance += pi * route_params.vehicle_turning_radius  # 2 * 1/4 circle circumference
             metrics.distance += route_params._track_width * 2.0
             metrics.distance += route_params.direction_change_extension_distance * 2.0
+
+        # angle calculation
+        if line1 is not None and line2 is not None:
+            metrics.angle = abs(gt.angle_between_lines(line1, line2) / pi)
+
+        self.calculate_speed(metrics, route_params)
+
+        # if heuristic_corridor_angle > 0: Estimate working corridor error by angle heuristic
+        theta = route_params.heuristic_corridor_angle
+
+        if metrics.angle > 0.0 and 0 < theta < 1:
+
+            angle = abs(gt.angle_between_lines(line1, line3) / pi)
+
+            if (metrics.angle > theta or angle > theta):
+
+                # normalize corridor error to [0,1]
+                a = (angle - theta) / (1 - theta)
+                b = (metrics.angle - theta) / (1 - theta)
+
+                # Combined error margin
+                metrics.working_corridor_error = max(0, (a + b - abs(a * b))) ** 0.5
 
         return metrics

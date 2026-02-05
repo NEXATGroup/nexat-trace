@@ -39,7 +39,8 @@ pip install nexat-trace
 
 When using this library, you should start with generating a track system. The ```TrackSystem``` class provides basic track system generation from an outer field border:
 
-> [!NOTE] All geometry should be in a metric coordinate system e.g. UTM projection.
+> [!CAUTION]
+> All geometry should be in a metric coordinate system e.g. UTM projection.
 
 ```python
 from nexat_trace import TrackSystem
@@ -83,7 +84,8 @@ path = route.get_linestring()
 ```
 
 The route can be plotted using the utility functions:
-> [!NOTE] For this you need to have the dev requirements installed. See dev_requirements.txt or setup_venv.sh for info
+> [!NOTE]
+> For this you need to have the dev requirements installed. See dev_requirements.txt or setup_venv.sh for info
 
 ```python
 from nexat_trace.util import plot_geometry as pg
