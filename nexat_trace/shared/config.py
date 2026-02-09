@@ -82,7 +82,7 @@ class RoutePlanningConfig:
         Dictionary mapping of post processing step and boolean value wether or not to run step after route construction
     - robust_curve_calculation_only:
         Wether or not to only use robust curve calculation functions (runs slower)
-        
+
     Other Parameters
     ----------------
 
