@@ -82,7 +82,7 @@ class RoutePlanningConfig:
         Dictionary mapping of post processing step and boolean value wether or not to run step after route construction
     - robust_curve_calculation_only:
         Wether or not to only use robust curve calculation functions (runs slower)
-        
+
     Other Parameters
     ----------------
 
@@ -100,6 +100,8 @@ class RoutePlanningConfig:
     - direction_change_extension_distance:
         Distance in m that is appended to a path segment in a straight line on a direction change maneuver.
         Used for the vehicle to get some space to steer
+    - working_corridor_extension:
+        Boolean indicating whether direction change extension should be applied to working corridor calculation.
     - direct_curve_link_distance:
         Distance in m below which two primary nodes allow a direct edge via neighbor (pi / k) curve.
     - min_ab_line_length:
@@ -254,6 +256,7 @@ class RoutePlanningConfig:
         self.speed_curve_angle_threshold = 0.0001
 
         self.direction_change_extension_distance = 10.0  # m
+        self.working_corridor_extension = False
         self.heuristic_corridor_angle = 0.0  # fraction of π rad (0.5π = 90°)
 
         self.direct_curve_link_distance = 25.0  # m
@@ -298,6 +301,7 @@ class RoutePlanningConfig:
         new.vehicle_speed_curve = self.vehicle_speed_curve
         new.speed_curve_angle_threshold = self.speed_curve_angle_threshold
         new.direction_change_extension_distance = self.direction_change_extension_distance
+        new.working_corridor_extension = self.working_corridor_extension
         new.heuristic_corridor_angle = self.heuristic_corridor_angle
         new.direct_curve_link_distance = self.direct_curve_link_distance
         new.delay_on_direction_change = self.delay_on_direction_change

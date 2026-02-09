@@ -1,0 +1,8 @@
+# .github/actions/lint/action.yml
+name: "Lint Check"
+description: "Runs Ruff linting"
+runs:
+  using: "composite"
+  steps:
+    - run: ruff check .
+      shell: bash

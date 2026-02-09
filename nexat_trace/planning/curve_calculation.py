@@ -176,7 +176,9 @@ def connect_ab_lines(
             )
             headland_path_between = LineString(circled_coords)
 
-        if headland_path_between.length > headland_shape.length * 0.95:
+        threshold = 1.95 if circle_cutout else 0.95
+
+        if headland_path_between.length > headland_shape.length * threshold:
             # curve1 ends after the start of curve2
             headland_segment = gt.get_substring_on_linearring(
                 headland_shape,
@@ -600,6 +602,7 @@ def search_curve_to_headland(
                 path = insert_hook_stops_to_headland(
                     path,
                     working_corridor,
+                    field_border,
                     route_params
                 )
                 curve_type = CurveType.HOOK
@@ -676,6 +679,7 @@ def search_curve_to_ab(
                 path = insert_hook_stops_to_ab(
                     path,
                     working_corridor,
+                    field_border,
                     route_params
                 )
                 curve_type = CurveType.HOOK
@@ -1004,6 +1008,7 @@ def trace_curve(
 def insert_hook_stops_to_ab(
         curve: LineString,
         working_corridor,
+        field_border,
         route_params: RoutePlanningConfig):
     """
     Inserts the needed points in a curve from a headland segment onto an ab line working corridor for a hook curve.
@@ -1019,7 +1024,6 @@ def insert_hook_stops_to_ab(
     if end_1.distance(curve_start) > end_2.distance(curve_start):
         working_corridor_oriented = working_corridor_oriented.reverse()
 
-    insert_point = Point(working_corridor_oriented.coords[0])
     curve_end_projection = working_corridor_oriented.reverse().project(
         curve_end,
     )
@@ -1031,14 +1035,27 @@ def insert_hook_stops_to_ab(
         )
         extension_point = working_corridor.interpolate(working_corridor.project(extension_point))
         points.append(extension_point)
+
+        if route_params.working_corridor_extension:
+            working_corridor_oriented = gt.extend_line_in_bounds(
+                working_corridor_oriented,
+                field_border,
+                route_params.direction_change_extension_distance,
+                extend_front = False,
+                extend_back = True
+            )
+
+        insert_point = Point(working_corridor_oriented.coords[0])
         points.append(insert_point)
         return LineString(points)
+
     return curve
 
 
 def insert_hook_stops_to_headland(
         curve: LineString,
         working_corridor,
+        field_border,
         route_params: RoutePlanningConfig):
     """
     Inserts the needed points in a curve from an ab line working corridor onto the headland for a hook curve.
@@ -1053,7 +1070,6 @@ def insert_hook_stops_to_headland(
     if end_1.distance(curve_start) < end_2.distance(curve_start):
         working_corridor_oriented = working_corridor_oriented.reverse()
 
-    corridor_end = Point(working_corridor_oriented.coords[-1])
     curve_start_projection = working_corridor_oriented.project(
         curve_start,
     )
@@ -1066,8 +1082,20 @@ def insert_hook_stops_to_headland(
         )
         backup_point = working_corridor_oriented.interpolate(working_corridor_oriented.project(backup_point))
         points.insert(0, backup_point)
+
+        if route_params.working_corridor_extension:
+            working_corridor_oriented = gt.extend_line_in_bounds(
+                working_corridor_oriented,
+                field_border,
+                route_params.direction_change_extension_distance,
+                extend_front = True,
+                extend_back = False
+            )
+
+        corridor_end = Point(working_corridor_oriented.coords[-1])
         points.insert(0, corridor_end)
         return LineString(points)
+
     return curve
 
 

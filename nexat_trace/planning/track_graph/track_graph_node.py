@@ -98,7 +98,7 @@ class TrackGraphNode:
         self.calculate_speed(metrics, route_params)
 
         return metrics
-    
+
     def calculate_distance(self, metrics: EdgeMetrics, other) -> None:
         """
         Calculates distance for given edge Metrics.
@@ -106,7 +106,7 @@ class TrackGraphNode:
         metrics.distance = self.distance_to(other)
         if self.ring_index != 0 and other.ring_index != 0:
             metrics.distance *= 2
-    
+
     def calculate_speed(self, metrics: EdgeMetrics, route_params: RoutePlanningConfig) -> None:
         """
         Calculates speeed for given edge Metrics.

@@ -1,0 +1,40 @@
+# .github/actions/publish/action.yml
+name: "Publish to PyPI"
+description: "Publish built wheels to PyPI"
+runs:
+  using: "composite"
+  steps:
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: wheels-Linux
+        path: dist
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: wheels-Windows
+        path: dist
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: wheels-macOS
+        path: dist
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install twine
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install twine
+
+    - name: Publish to PyPI
+      shell: bash
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ env.PYPI_API_TOKEN }}
+      run: |
+        twine upload dist/*
