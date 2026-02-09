@@ -35,6 +35,6 @@ runs:
       shell: bash
       env:
         TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        TWINE_PASSWORD: ${{ env.PYPI_API_TOKEN }}
       run: |
         twine upload dist/*
