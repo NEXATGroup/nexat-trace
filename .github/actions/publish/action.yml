@@ -4,21 +4,37 @@ description: "Publish built wheels to PyPI"
 runs:
   using: "composite"
   steps:
+
     - uses: actions/download-artifact@v4
       with:
         name: wheels-Linux
         path: dist
+
     - uses: actions/download-artifact@v4
       with:
         name: wheels-Windows
         path: dist
+
     - uses: actions/download-artifact@v4
       with:
         name: wheels-macOS
         path: dist
 
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+    - name: Setup Python
+      uses: actions/setup-python@v5
       with:
-        packages-dir: dist
-        use-docker: false
+        python-version: "3.11"
+
+    - name: Install twine
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install twine
+
+    - name: Publish to PyPI
+      shell: bash
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        twine upload dist/*
