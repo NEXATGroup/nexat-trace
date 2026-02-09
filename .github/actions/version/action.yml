@@ -12,7 +12,7 @@ runs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ env.BOT_TOKEN }}
         persist-credentials: true
 
     - uses: actions/setup-python@v5
