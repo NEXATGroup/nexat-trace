@@ -4,3 +4,4 @@ matplotlib
 cython
 ruff
 build
+pytest

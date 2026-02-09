@@ -58,6 +58,7 @@ exclude = [
     "venv",
     ".mypy_cache",
     ".pytest_cache",
+    "pydubins",
 ]
 
 line-length = 130

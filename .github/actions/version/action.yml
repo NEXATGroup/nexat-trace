@@ -1,0 +1,40 @@
+# .github/actions/version/action.yml
+name: "Bump Version"
+description: "Bumps project version using bump2version, commits and tags"
+inputs:
+  part:
+    description: "Which part to bump (patch, minor, major)"
+    required: false
+    default: "patch"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ env.BOT_TOKEN }}
+        persist-credentials: true
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.10.12"
+
+    - run: pip install bump2version
+      shell: bash
+
+    - name: Set git identity
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+      shell: bash
+
+    - name: Bump version
+      run: |
+        bump2version ${{ inputs.part }} --list
+        NEW_TAG=$(git describe --tags --abbrev=0)
+        echo "new_tag=$NEW_TAG" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Push version bump
+      run: git push --follow-tags
+      shell: bash

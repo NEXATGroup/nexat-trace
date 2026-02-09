@@ -1,0 +1,47 @@
+# .github/workflows/release.yml
+name: Release
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    environment: Prod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/version
+        with:
+          part: patch
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+
+  wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    environment: Prod
+    needs: version
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+      - uses: ./.github/actions/wheels
+
+  publish:
+    runs-on: ubuntu-22.04
+    environment: Prod
+    needs: wheels
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/publish
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

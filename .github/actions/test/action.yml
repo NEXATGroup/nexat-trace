@@ -1,0 +1,8 @@
+# .github/actions/test/action.yml
+name: "Run Tests"
+description: "Runs pytest"
+runs:
+  using: "composite"
+  steps:
+    - run: pytest -q --maxfail=1 --disable-warnings
+      shell: bash
