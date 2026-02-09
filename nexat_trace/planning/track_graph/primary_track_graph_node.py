@@ -63,8 +63,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             secondary_node_tree: STRtree,
             field_border: Polygon,
             inner_border: LinearRing | None = None,
-            headland: LinearRing | None = None,
-            planner_config: RoutePlanningConfig | None = None):
+            headland: LinearRing | None = None):
         """
         Links the 2 neighbor nodes of the intersecting headland node.
         """
@@ -97,7 +96,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
                     line1,
                     inner_border,
                     headland,
-                    planner_config
+                    route_params
                 )
             reverse_metrics = metrics.copy()
 
@@ -107,28 +106,36 @@ class PrimaryTrackGraphNode(TrackGraphNode):
                 reverse_metrics
             )
 
+        corridor_lookahead = round(route_params.working_width / route_params._track_width)
+        back_corridor = intersecting_secondary
+        front_corridor = intersecting_secondary
+
+        for _ in range(corridor_lookahead):
+            back_corridor = back_corridor.back_secondary
+            front_corridor = front_corridor.front_secondary
+
         secondary = intersecting_secondary.back_secondary
         if intersecting_secondary.check_drivability(self, secondary, route_params):
             line2 = LineString([secondary.position, secondary.back_secondary.position])
-            line3 = LineString([intersecting_secondary.front_secondary.position, secondary.position])
+            line3 = LineString([front_corridor.position, intersecting_secondary.position])
             handle_linking_secondary(secondary, line2, line3)
             got_one_secondary = True
 
         secondary = intersecting_secondary.front_secondary
         if intersecting_secondary.check_drivability(self, secondary, route_params):
             line2 = LineString([secondary.position, secondary.front_secondary.position])
-            line3 = LineString([intersecting_secondary.back_secondary.position, secondary.position])
+            line3 = LineString([back_corridor.position, intersecting_secondary.position])
             handle_linking_secondary(secondary, line2, line3)
             got_one_secondary = True
 
         if not got_one_secondary:
             secondary1 = intersecting_secondary.back_secondary
             line2 = LineString([secondary1.position, secondary1.back_secondary.position])
-            line3 = LineString([intersecting_secondary.front_secondary.position, secondary.position])
+            line3 = LineString([front_corridor.position, intersecting_secondary.position])
             m1 = self.calculate_metrics(secondary1, route_params, line1, line2, line3)
             secondary2 = intersecting_secondary.front_secondary
             line2 = LineString([secondary2.position, secondary.front_secondary.position])
-            line3 = LineString([intersecting_secondary.back_secondary.position, secondary.position])
+            line3 = LineString([back_corridor.position, intersecting_secondary.position])
             m2 = self.calculate_metrics(secondary2, route_params, line1, line2, line3)
             weights = Weights(Weights.GRAPH_BUILDING)
             if m1.get_cost(weights) < m2.get_cost(weights):
