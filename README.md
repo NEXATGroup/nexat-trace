@@ -24,7 +24,11 @@ Planner parameters include:
 
 ## Installation
 
-Releases of this library are soon to be hosted on pip
+Releases of this library are hosted on pip
+
+```
+pip install nexat-trace
+```
 
 
 ## Usage
