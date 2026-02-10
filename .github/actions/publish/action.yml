@@ -2,29 +2,16 @@
 name: "Publish to PyPI"
 description: "Publish built wheels to PyPI"
 
-inputs:
-  python-versions:
-    description: "Space separated list of python versions"
-    required: true
-  os-list:
-    description: "Space separated list of operating systems"
-    required: true
-
 runs:
   using: "composite"
   steps:
 
     - name: Download all wheel artifacts
-      shell: bash
-      run: |
-        mkdir -p dist
-        for py in ${{ inputs.python-versions }}; do
-          for os in ${{ inputs.os-list }}; do
-            name="wheels-${py}-${os}"
-            echo "Downloading $name"
-            gh run download-artifact "$name" --path dist || echo "Skipping $name"
-          done
-        done
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        path: dist
+        merge-multiple: true
 
     - name: Setup Python
       uses: actions/setup-python@v5
