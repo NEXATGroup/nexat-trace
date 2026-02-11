@@ -574,6 +574,7 @@ def search_curve_to_headland(
         inner_field_border
     )
 
+    # try if simple turn fits
     path = get_simple_turn_to_headland(
         ab_line,
         headland_segment,
@@ -596,6 +597,7 @@ def search_curve_to_headland(
     curve_end_projection = working_corridor.project(Point(path.coords[0]))
     if curve_end_projection > working_corridor.length / 2.0:
         curve_end_projection = working_corridor.length - curve_end_projection
+
     # is the end of the path within a given range of the start of the working corridor?
     corridor_error_detected: bool = not metrics or metrics.working_corridor_error > 0
     if curve_end_projection > route_params.corridor_threshold and corridor_error_detected:
@@ -859,6 +861,7 @@ def trace_curve(
     one or both of start or end node have to be on headland.
     Returns the dubins path from the starting node to the target node.
     """
+
     if to_index >= len(nodes):
         raise KeyError("trace_curve() was called with inappropriate indexes")
     if to_index == -1:
