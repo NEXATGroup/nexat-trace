@@ -491,8 +491,7 @@ def trace_neighbor_curve(
         field_border,
         inner_field_border,
         is_at_cutout,
-        route_params,
-        from_node.edges[to_node.index]
+        route_params
     )
 
     to_segment = to_node.get_ab_line().reverse()
@@ -503,8 +502,7 @@ def trace_neighbor_curve(
         field_border,
         inner_field_border,
         is_at_cutout,
-        route_params,
-        to_node.edges[from_node.index]
+        route_params
     )
 
     if not curve1.valid or not curve2.valid:
@@ -641,7 +639,7 @@ def search_curve_to_ab(
         route_params: RoutePlanningConfig,
         metrics: EdgeMetrics = None) -> Curve:
     """
-    Searches for the most favorable turn from the end of an AB line onto a headland shape.
+    Searches for the most favorable turn from a headland shape onto an AB line.
 
     Returns the curve as LineString.
     """
@@ -946,7 +944,8 @@ def trace_curve(
             field_border,
             inner_field_border,
             is_at_cutout,
-            route_params
+            route_params,
+            from_node.edges[to_node.index]
         )
         if curve.valid:
             headland_part = gt.get_substring_on_linearring(
@@ -986,7 +985,8 @@ def trace_curve(
             field_border,
             inner_field_border,
             is_at_cutout,
-            route_params
+            route_params,
+            from_node.edges[to_node.index]
         )
         if curve.valid:
             curve_end_projection = headland_shape.project(
