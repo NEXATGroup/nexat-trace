@@ -2,11 +2,13 @@
 name: Release
 
 on:
-  push:
-    branches: [ "main" ]
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 jobs:
   version:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-22.04
     environment: Prod
     steps:
@@ -25,7 +27,9 @@ jobs:
     environment: Prod
     needs: version
     strategy:
+      fail-fast: false
       matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
         os: [ubuntu-22.04, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +37,7 @@ jobs:
           fetch-depth: 0
           submodules: true
       - uses: ./.github/actions/wheels
-
+  
   publish:
     runs-on: ubuntu-22.04
     environment: Prod
