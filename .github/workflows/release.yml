@@ -3,7 +3,7 @@ name: Release
 
 on:
   push:
-    branches: [ "main", "feature/extend_build_pipeline"]
+    branches: [ "main" ]
 
 jobs:
   version:
@@ -36,14 +36,14 @@ jobs:
           submodules: true
       - uses: ./.github/actions/wheels
   
-#  publish:
-#    runs-on: ubuntu-22.04
-#    environment: Prod
-#    needs: wheels
-#    steps:
-#      - uses: actions/checkout@v4
-#        with:
-#          fetch-depth: 0
-#      - uses: ./.github/actions/publish
-#        env:
-#          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+  publish:
+    runs-on: ubuntu-22.04
+    environment: Prod
+    needs: wheels
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/publish
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
