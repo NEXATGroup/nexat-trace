@@ -9,6 +9,7 @@ from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, 
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, substring, unary_union
 
+from debug_visuals import Visualizer
 
 class Circle:
     """
@@ -464,11 +465,17 @@ def dubins_between_segments(
         current_line_extended = extend_line_in_bounds(current_line_extended, bounds, extend_back = False)
 
     target_line_extended = target_line
+    while current_line.intersects(target_line_extended):
+        target_line_extended = substring(target_line_extended, 0.05, target_line_extended.length) 
+
     if target_line.coords[0] != target_line.coords[-1]:
-        target_line_extended = extend_line_in_bounds(target_line_extended, bounds, extend_front=False, extend_back=True)
         target_front_extended = extend_line_in_bounds(target_line_extended, bounds, extend_front=True, extend_back=False)
-        if not current_line.intersects(target_front_extended):
-            target_line_extended = target_front_extended
+        
+        while current_line.intersects(target_front_extended):
+            target_front_extended = substring(target_front_extended, 0, target_front_extended.length * 0.95) 
+        
+        target_line_extended = target_front_extended
+        target_line_extended = extend_line_in_bounds(target_line_extended, bounds, extend_front=False, extend_back=True)
 
     intersection_point_line = current_line_extended.intersection(target_line_extended)
     current_point_projection = current_line_extended.project(current_point)
