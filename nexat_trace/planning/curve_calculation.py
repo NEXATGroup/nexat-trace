@@ -64,7 +64,7 @@ def connect_ab_lines(
     if not isinstance(over_node, SecondaryTrackGraphNode):
         return Curve([from_node.position, to_node.position], CurveType.UNDEFINED, False)
 
-    if allow_headland_hop and from_node.ring_index != to_node.ring_index:
+    if allow_headland_hop and from_node.ring_index != to_node.ring_index and len(nodes) > 3:
 
         return trace_headland_hop(
             nodes,
@@ -304,10 +304,10 @@ def trace_headland_hop(
     route_params.corridor_strategy = CorridorStrategy.DRIVE_NONE
 
     # construct imaginary ab line to traverse to the other headland ring
-    from_ring = from_node.ring_index
-    for i in range(from_index, to_index + 1):
+    from_ring = abs(from_node.ring_index)
+    for i in range(from_index + 1, to_index + 1):
         node = nodes[i]
-        ring_index = node.ring_index
+        ring_index = (node.ring_index)
         if ring_index != from_ring:
             n1 = PrimaryTrackGraphNode(nodes[i - 1].position, from_ring)
             n2 = PrimaryTrackGraphNode(node.position, ring_index)
