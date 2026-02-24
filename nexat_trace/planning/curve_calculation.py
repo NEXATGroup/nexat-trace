@@ -5,6 +5,7 @@ from typing import Dict, List
 from shapely import LinearRing, LineString, MultiPoint, Point, Polygon, STRtree
 from shapely.ops import nearest_points
 
+from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.planning.track_graph.primary_track_graph_node import PrimaryTrackGraphNode
 from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
 from nexat_trace.shared.config import CorridorStrategy, RoutePlanningConfig
@@ -558,7 +559,8 @@ def search_curve_to_headland(
         field_border: LinearRing,
         inner_field_border: LinearRing,
         is_at_cutout: bool,
-        route_params: RoutePlanningConfig) -> Curve:
+        route_params: RoutePlanningConfig,
+        metrics: EdgeMetrics = None) -> Curve:
     """
     Searches for the most favorable turn from the end of an AB line onto a headland shape.
 
@@ -570,6 +572,7 @@ def search_curve_to_headland(
         inner_field_border
     )
 
+    # try if simple turn fits
     path = get_simple_turn_to_headland(
         ab_line,
         headland_segment,
@@ -592,8 +595,10 @@ def search_curve_to_headland(
     curve_end_projection = working_corridor.project(Point(path.coords[0]))
     if curve_end_projection > working_corridor.length / 2.0:
         curve_end_projection = working_corridor.length - curve_end_projection
+
     # is the end of the path within a given range of the start of the working corridor?
-    if curve_end_projection > route_params.corridor_threshold:
+    corridor_error_detected: bool = not metrics or metrics.working_corridor_error > 0
+    if curve_end_projection > route_params.corridor_threshold and corridor_error_detected:
         # should this working corridor be driven?
         strategy = route_params.corridor_strategy
         if (strategy == CorridorStrategy.DRIVE_ALL or
@@ -631,9 +636,10 @@ def search_curve_to_ab(
         field_border: LinearRing,
         inner_field_border: LinearRing,
         is_at_cutout: bool,
-        route_params: RoutePlanningConfig) -> Curve:
+        route_params: RoutePlanningConfig,
+        metrics: EdgeMetrics = None) -> Curve:
     """
-    Searches for the most favorable turn from the end of an AB line onto a headland shape.
+    Searches for the most favorable turn from a headland shape onto an AB line.
 
     Returns the curve as LineString.
     """
@@ -669,7 +675,8 @@ def search_curve_to_ab(
         curve_end_projection = working_corridor.length - curve_end_projection
 
     # is the end of the curve within a given range of the start of the working corridor?
-    if curve_end_projection > route_params.corridor_threshold:
+    corridor_error_detected: bool = not metrics or metrics.working_corridor_error > 0
+    if curve_end_projection > route_params.corridor_threshold and corridor_error_detected:
         # should this working corridor be driven?
         strategy = route_params.corridor_strategy
         if (strategy == CorridorStrategy.DRIVE_ALL or
@@ -852,6 +859,7 @@ def trace_curve(
     one or both of start or end node have to be on headland.
     Returns the dubins path from the starting node to the target node.
     """
+
     if to_index >= len(nodes):
         raise KeyError("trace_curve() was called with inappropriate indexes")
     if to_index == -1:
@@ -936,7 +944,8 @@ def trace_curve(
             field_border,
             inner_field_border,
             is_at_cutout,
-            route_params
+            route_params,
+            from_node.edges[to_node.index]
         )
         if curve.valid:
             headland_part = gt.get_substring_on_linearring(
@@ -976,7 +985,8 @@ def trace_curve(
             field_border,
             inner_field_border,
             is_at_cutout,
-            route_params
+            route_params,
+            from_node.edges[to_node.index]
         )
         if curve.valid:
             curve_end_projection = headland_shape.project(

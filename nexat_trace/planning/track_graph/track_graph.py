@@ -89,8 +89,7 @@ class TrackGraph:
                 self.secondary_node_tree,
                 field_border,
                 self.inner_border.geoms[0].exterior,  # TODO implement actual support for multiple sub fields
-                headland,
-                self.route_params
+                headland
             )
             if not success:
                 primary.plot()
