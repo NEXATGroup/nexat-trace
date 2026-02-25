@@ -9,7 +9,6 @@ from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, 
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, substring, unary_union
 
-from debug_visuals import Visualizer
 
 class Circle:
     """
