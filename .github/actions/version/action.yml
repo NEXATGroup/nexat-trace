@@ -6,6 +6,10 @@ inputs:
     description: "Which part to bump (patch, minor, major)"
     required: false
     default: "patch"
+outputs:
+  new_tag:
+    description: "The new version tag"
+    value: ${{ steps.bump.outputs.new_tag }}
 runs:
   using: "composite"
   steps:
@@ -29,10 +33,11 @@ runs:
       shell: bash
 
     - name: Bump version
+      id: bump
       run: |
         bump2version ${{ inputs.part }} --list
         NEW_TAG=$(git describe --tags --abbrev=0)
-        echo "new_tag=$NEW_TAG" >> $GITHUB_ENV
+        echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Push version bump
