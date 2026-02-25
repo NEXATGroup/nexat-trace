@@ -99,7 +99,9 @@ def get_secondary_positions(
 
             # 3 points, all within a certain distance_to of each other (min/max to headland)
             # 4 * track_width * 1.5 max probable working width
-            if len(intersections) == 3 and intersections[1].distance_to(intersections[2]) < 4 * route_params._track_width * 1.5:
+            if (len(intersections) == 3 and
+                intersections[1].distance_to(intersections[2]) > route_params.vehicle_turning_radius and
+                intersections[1].distance_to(intersections[2]) < 4 * route_params._track_width * 1.5):
 
                 # is there an ab line here?
                 link_edge_candidate = LineString([intersections[1].position, intersections[2].position])
@@ -144,7 +146,9 @@ def get_secondary_positions(
 
             # 3 points, all within a certain distance_to of each other (min/max to headland)
             # 4 * track_width * 1.5 max probable working width
-            if len(intersections) == 3 and intersections[1].distance_to(intersections[2]) < 4 * route_params._track_width * 1.5:
+            if (len(intersections) == 3 and
+                intersections[1].distance_to(intersections[2]) > route_params.vehicle_turning_radius and
+                intersections[1].distance_to(intersections[2]) < 4 * route_params._track_width * 1.5):
                 # is there an ab line here?
                 link_edge_candidate = LineString([intersections[1].position, intersections[2].position])
                 link_edge_candidate = LineString(
