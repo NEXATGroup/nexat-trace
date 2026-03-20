@@ -5,7 +5,7 @@ from typing import Iterable, Iterator, List, Tuple, TypeVar
 import dubins
 import numpy as np
 from numpy import typing as npt
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, Polygon
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, Polygon, remove_repeated_points
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, substring, unary_union
 
@@ -282,20 +282,19 @@ def calculate_circle(points: List[Tuple[float, float]]) -> Circle:
         x1, y1 = points[0]
         x2, y2 = points[1]
         x3, y3 = points[2]
-        d = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
-        ux = ((x1**2 + y1**2) * (y2 - y3) + (x2**2 + y2**2) * (y3 - y1) + (x3**2 + y3**2) * (y1 - y2)) / d
-        uy = ((x1**2 + y1**2) * (x3 - x2) + (x2**2 + y2**2) * (x1 - x3) + (x3**2 + y3**2) * (x2 - x1)) / d
-        radius = np.sqrt((ux - x1)**2 + (uy - y1)**2)
-        return Circle((ux, uy), radius)
+        D = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+        Ux = ((x1**2 + y1**2) * (y2 - y3) + (x2**2 + y2**2) * (y3 - y1) + (x3**2 + y3**2) * (y1 - y2)) / D
+        Uy = ((x1**2 + y1**2) * (x3 - x2) + (x2**2 + y2**2) * (x1 - x3) + (x3**2 + y3**2) * (x2 - x1)) / D
+        radius = np.sqrt((Ux - x1)**2 + (Uy - y1)**2)
+        return {'center': (Ux, Uy), 'radius': radius}
     except ZeroDivisionError:
-        return Circle((0.0, 0.0), 0.0)
+        return {'center': (0, 0), 'radius': float('inf')}
 
 
 def line_discontinuities(
         line: LineString,
         angle_threshold: float = pi / 6.0,
-        radius_threshold: float = 12.0,
-        tolerance: float | None = 0.1) -> list[Point]:
+        radius_threshold: float = 12.0) -> list[Point]:
     """
     Get the locations of discontinuities in a line.
 
@@ -319,21 +318,30 @@ def line_discontinuities(
 
         List of points with the locations of discontinuities
     """
-    if not line:
+    if line is None or line.is_empty or not isinstance(line, LineString):
         return []
-
-    if tolerance:
-        segment_string = line.simplify(tolerance, preserve_topology=True)
-
-    line_lines = triplewise(segment_string.coords)
+  
+    line_lines = triplewise(list(line.coords))
     segmentation_points = []
 
-    for point1, point2, point3 in line_lines:
-        circle = calculate_circle([point1, point2, point3])
-        angle = abs(angle_between_lines(LineString([point1, point2]), LineString([point2, point3])))
+    for i, points in enumerate(line_lines):
+        # Skip degenerate triples where consecutive points are identical
+        if points[0] == points[1] or points[1] == points[2]:
+            continue
 
-        if circle.radius < radius_threshold or angle > angle_threshold:
-            segmentation_points.append(Point(point2))
+        circle = calculate_circle([*points])
+        try:
+            angle = abs(angle_between_lines(
+                LineString([points[0], points[1]]),
+                LineString([points[1], points[2]])
+            ))
+        except Exception:
+            print(f"Error calculating angle between lines for points: {points}")
+            continue
+        if circle["radius"] == float('inf'):
+            print(f"Angle between lines: {angle} for points: {points}, while circle radius is infinite.")
+        if circle["radius"] < radius_threshold or angle > angle_threshold:
+            segmentation_points.append((i, Point(points[1])))
 
     return segmentation_points
 
@@ -344,7 +352,7 @@ def segment_line(
         radius_threshold: float = 12.0,
         recurse_once: bool = False) -> tuple[list, MultiPoint]:
     """
-    Cut a given line into segments.
+    Cut a given line into segments. Removes duplicate points.
 
     Parameters
     ----------
@@ -366,31 +374,54 @@ def segment_line(
 
         A tuple with a list of segmented lines and a MultiPoint with the points of discontinuities.
     """
-    segmentation_points = line_discontinuities(input_linestring, angle_threshold, radius_threshold)
-    segments = []
-    last_dist = 0
-    for point in segmentation_points:
-        now_dist = input_linestring.project(point)
-        segment = substring(input_linestring, last_dist, now_dist)
-        if segment.length > radius_threshold:
-            segments.append(segment)
-        last_dist = now_dist
-    if len(segments) == 0:
-        return [input_linestring], []
-    if len(segmentation_points) == 0:
-        return [input_linestring], []
-    if recurse_once:
-        leftovers = substring(input_linestring, last_dist, input_linestring.length)
-        leftovers_list = list(leftovers.coords)
-        leftovers_list.extend(list(segments.pop(0).coords))
-        rest = segment_line(LineString(leftovers_list))
-        if rest is not None:
-            segments.extend(rest[0])
-            segmentation_points.extend(rest[1])
-    else:
-        leftovers = substring(input_linestring, last_dist, input_linestring.length)
+    if input_linestring is None or input_linestring.is_empty or not isinstance(input_linestring, LineString):
+        return [], []
+    free_of_duplicates: LineString | None = None
+    try:   
+        free_of_duplicates = remove_repeated_points(input_linestring, 0.01)
+        if not free_of_duplicates.is_valid:
+            print('Fuck')
+        #    free_of_duplicates = input_linestring
+    except Exception as e:
+        free_of_duplicates = input_linestring
+    if len(free_of_duplicates.coords) < 2:
+        return [], []
+    segmentation_points = line_discontinuities(free_of_duplicates, angle_threshold, radius_threshold)
+
+    if not segmentation_points:
+        return [free_of_duplicates], []
+
+    segments: list[LineString] = []
+    last_elem: int = 0
+
+    for elem_num, point in segmentation_points:
+        coords = list(free_of_duplicates.coords[last_elem:elem_num + 2])
+        if len(coords) >= 2:
+            segment = LineString(coords)
+            if segment.length > radius_threshold:
+                segments.append(segment)
+        last_elem = elem_num + 1
+
+    # Handle remaining tail
+    tail_coords = list(free_of_duplicates.coords[last_elem:])
+    if len(tail_coords) >= 2:
+        leftovers = LineString(tail_coords)
         if leftovers.length > radius_threshold:
-            segments.append(leftovers)
+            if recurse_once:
+                leading = segments.pop(0) if segments else None
+                combined_coords = tail_coords[:]
+                if leading is not None:
+                    combined_coords.extend(list(leading.coords))
+                if len(combined_coords) >= 2:
+                    rest_segments, rest_points = segment_line(LineString(combined_coords))
+                    segments.extend(rest_segments)
+                    segmentation_points.extend(rest_points)
+            else:
+                segments.append(leftovers)
+
+    if not segments:
+        return [free_of_duplicates], []
+
     return segments, segmentation_points
 
 
