@@ -359,7 +359,7 @@ def simplify_ab_lines(
             # Find closest point on 2nd line and orient coordinates accordingly
             start = Point(line_2.coords[0])
             end = Point(line_2.coords[-1])
-            if line_1.distance(start) < line_1.distance(end):
+            if line_1.distance(start) < line_1.distance(end):  # for kinked ab lines this could be dependent on machine precision? Since lines could be parallel here
                 target = start
                 coords = list(line_2.coords)
             else:

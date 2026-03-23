@@ -974,7 +974,7 @@ class TrackGraph:
                 print(f"Cutting path to first primary node, cut off {first_point_index} points")
 
         cut_path = LineString(cut_path_points_coords[first_point_index::])
-        if self.debug_prints:
+        if self.route_params.debug_prints:
             print(f"Cut path to first node: {did_cut_path_to_first_node}, cut off {first_point_index} points")
 
         start_node = self.primary_nodes[self.primary_node_tree.nearest(Point(cut_path.coords[0]))]

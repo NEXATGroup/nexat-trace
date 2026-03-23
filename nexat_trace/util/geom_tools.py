@@ -378,7 +378,7 @@ def segment_line(
         free_of_duplicates = remove_repeated_points(input_linestring, 0.01)
         if not free_of_duplicates.is_valid:
             print('Fuck')
-        #    free_of_duplicates = input_linestring
+            # free_of_duplicates = input_linestring
     except Exception as e:
         free_of_duplicates = input_linestring
     if len(free_of_duplicates.coords) < 2:
@@ -417,22 +417,7 @@ def segment_line(
                 segments.append(leftovers)
 
     if not segments:
-        return [free_of_duplicates], []
-
-            if recurse_once:
-                leading = segments.pop(0) if segments else None
-                combined_coords = tail_coords[:]
-                if leading is not None:
-                    combined_coords.extend(list(leading.coords))
-                if len(combined_coords) >= 2:
-                    rest_segments, rest_points = segment_line(LineString(combined_coords))
-                    segments.extend(rest_segments)
-                    segmentation_points.extend(rest_points)
-            else:
-                segments.append(leftovers)
-
-    if not segments:
-        return [free_of_duplicates], []
+        return [free_of_duplicates],[]
 
     return segments, segmentation_points
 
