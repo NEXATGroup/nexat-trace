@@ -928,6 +928,8 @@ class TrackGraph:
             did_cut_path_to_first_node = True
 
         cut_path = LineString(cut_path_points_coords[first_point_index::])
+        if self.debug_prints:
+            print(f"Cut path to first node: {did_cut_path_to_first_node}, cut off {first_point_index} points")
 
         start_node = self.primary_nodes[self.primary_node_tree.nearest(Point(cut_path.coords[0]))]
         start_line = ab_line_set[0]
@@ -964,12 +966,14 @@ class TrackGraph:
                     ab_line_set,
                     key=lambda set_line: set_line.distance(node2.position)
                 )
+                preSkip = i
                 i = ab_line_set.index(skip_to_line)
 
                 if self.route_params.debug_prints:
                     print(
                         "Consecutive primary nodes were not part of the same AB line in the loaded graph - "
                         + "Skipping to line of primary neighbor"
+                        + f" (skipped from line {preSkip} to line {i})"
                     )
 
             nodes.append(node1)
@@ -980,7 +984,7 @@ class TrackGraph:
 
                 next_line = ab_line_set[i + 1]
                 next_primary = self.primary_nodes[self.primary_node_tree.nearest(Point(next_line.coords[0]))]
-                while next_primary == node2:
+                while next_primary == node2 and i < len(ab_line_set) - 2:
                     i += 1
                     next_line = ab_line_set[i + 1]
                     next_primary = self.primary_nodes[self.primary_node_tree.nearest(Point(next_line.coords[0]))]

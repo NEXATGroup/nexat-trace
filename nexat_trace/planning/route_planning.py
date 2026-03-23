@@ -81,12 +81,13 @@ def net_graph_from_track_system(
         n2 = PrimaryTrackGraphNode(Point(ab_line.coords[-1]), None)
         n2.set_ab_line(ab_line)
         primary_nodes.append(n2)
-
     ab_lines = []
     for i in range(0, len(primary_nodes) - 1, 2):
         ls = primary_nodes[i].get_ab_line()
         ab_lines.append(ls)
 
+    track_system.ab_lines = ab_lines
+    
     if route_params.debug_plot_field:
         from nexat_trace.util import plot_geometry as pg
         pg.plot_linestring(outer_field_border, "black")
