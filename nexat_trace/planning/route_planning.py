@@ -3,7 +3,7 @@ import time
 from typing import List, Tuple
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-from shapely import LinearRing, LineString, MultiPolygon, Point
+from shapely import LinearRing, LineString, MultiPolygon, Point, MultiLineString
 
 from nexat_trace.planning.net_graph.net_graph import NetGraph
 from nexat_trace.planning.route import Route
@@ -63,6 +63,36 @@ def net_graph_from_track_system(
         route_params
     )
 
+    #debug print ab lines to geojson for visual debugging
+    if route_params.debug_prints:
+        import json
+        import os
+        from shapely.geometry import mapping, MultiLineString, LineString
+        abline_features = []
+        if isinstance(ab_lines, MultiLineString):
+            lines = list(ab_lines.geoms)
+        elif isinstance(ab_lines, LineString):
+            lines = [ab_lines]
+        else:
+            lines = list(ab_lines.geoms) if hasattr(ab_lines, 'geoms') else ab_lines
+
+        for k, line in enumerate(lines):
+            abline_features.append({
+                "type": "Feature",
+                "properties": {"line_index": k},
+                "geometry": mapping(line)
+            })
+        ablines_geojson = {
+            "type": "FeatureCollection",
+            "features": abline_features
+        }
+        os.makedirs("/tmp/debug", exist_ok=True)
+        with open("/tmp/debug/route_planning_ablines_debug.geojson", "w") as f:
+            json.dump(ablines_geojson, f, indent=2)
+    # end debug print
+
+
+
     headlands, _ = field_conversion.get_target_headland_from_track_system(
         track_system,
         route_params
@@ -86,8 +116,8 @@ def net_graph_from_track_system(
         ls = primary_nodes[i].get_ab_line()
         ab_lines.append(ls)
 
-    track_system.ab_lines = ab_lines
-    
+    track_system.ab_lines = MultiLineString(ab_lines)
+
     if route_params.debug_plot_field:
         from nexat_trace.util import plot_geometry as pg
         pg.plot_linestring(outer_field_border, "black")

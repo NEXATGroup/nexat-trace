@@ -296,7 +296,7 @@ def line_discontinuities(
         angle_threshold: float = pi / 6.0,
         radius_threshold: float = 12.0) -> list[Point]:
     """
-    Get the locations of discontinuities in a line.
+    Get the locations of discontinuities in a line. Expects a line without duplicates.
 
     Parameters
     ----------
@@ -309,9 +309,6 @@ def line_discontinuities(
 
     radius_threshold : float
         The maximum radius of the circle that can be fitted to three consecutive points.
-
-    tolerance : float
-        The tolerance used in simplifying the line.
 
     Returns
     -------
@@ -407,6 +404,21 @@ def segment_line(
     if len(tail_coords) >= 2:
         leftovers = LineString(tail_coords)
         if leftovers.length > radius_threshold:
+            if recurse_once:
+                leading = segments.pop(0) if segments else None
+                combined_coords = tail_coords[:]
+                if leading is not None:
+                    combined_coords.extend(list(leading.coords))
+                if len(combined_coords) >= 2:
+                    rest_segments, rest_points = segment_line(LineString(combined_coords))
+                    segments.extend(rest_segments)
+                    segmentation_points.extend(rest_points)
+            else:
+                segments.append(leftovers)
+
+    if not segments:
+        return [free_of_duplicates], []
+
             if recurse_once:
                 leading = segments.pop(0) if segments else None
                 combined_coords = tail_coords[:]

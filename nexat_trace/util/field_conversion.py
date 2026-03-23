@@ -61,7 +61,7 @@ def get_secondary_positions(
     headland_collection = GeometryCollection(headlands)
     cut_ab_lines = []
     for line in ab_lines:
-        if line.intersects(headland_collection) and line.length > 2.0:
+        if line.intersects(headland_collection) and line.length > 2.1:
             cut_line = substring(line, 1.0, line.length - 1.0)
             cut_ab_lines.append(cut_line)
         else:
@@ -75,8 +75,10 @@ def get_secondary_positions(
 
     multi_ab_lines_unextended = MultiLineString(cut_ab_lines)
 
-    for line in cut_ab_lines:
-
+    for j, line in enumerate(cut_ab_lines):
+        print(f"Processing line {j+1}/{len(cut_ab_lines)} for secondary positions")
+        if j == 58:
+            print("Debug breakpoint")
         # Check front of line for collisions
         forward_line = LineString(line)
         forward_end = Point(line.coords[-1])
@@ -309,7 +311,39 @@ def simplify_ab_lines(
 
     for i in range(len(old_ab_lines)-1):
         line_1 = old_ab_lines[i]
+
+        if line_1.length < route_params.min_ab_line_length:
+            simplify_pairs.add(i)
+            if route_params.debug_prints:
+                print(f"Removing ab line {line_1} because it is shorter than min_ab_line_length")
+            continue
+
         xl = gt.extend_line(line_1, max_extension_length)
+
+        xl_intersections = [] 
+        for ring in headlands:
+            intersection = xl.intersection(ring)
+            if isinstance(intersection, MultiPoint):
+                xl_intersections.extend(list(intersection.geoms))
+            elif isinstance(intersection, Point):
+                xl_intersections.append(intersection)
+                if route_params.debug_prints:
+                    print("Only one intersection with headland for line, might return wrong results")
+        
+        # Trim xl to the segment between the two closest intersections
+        # This moves the headland intersection check to here and should make it more reliable      
+        if len(xl_intersections) >= 2:
+            centroid = line_1.centroid
+            centroid_proj = xl.project(centroid)
+
+            before = [p for p in xl_intersections if xl.project(p) < centroid_proj]
+            after = [p for p in xl_intersections if xl.project(p) >= centroid_proj]
+
+            if before and after:
+                closest_before = max(before, key=lambda p: xl.project(p))
+                closest_after = min(after, key=lambda p: xl.project(p))
+                xl_to_headland = substring(xl, xl.project(closest_before), xl.project(closest_after))
+
 
         best_replacement = None
         best_dist = float('inf')
@@ -318,7 +352,9 @@ def simplify_ab_lines(
             line_2 = old_ab_lines[ii]
 
             if line_1.equals(line_2):
-                continue
+                # if they are equal just throw the first away and search replacements for the second
+                simplify_pairs.add(i)
+                break
 
             # Find closest point on 2nd line and orient coordinates accordingly
             start = Point(line_2.coords[0])
@@ -330,7 +366,7 @@ def simplify_ab_lines(
                 target = end
                 coords = list(line_2.coords)[::-1]
 
-            if difference < xl.distance(target):
+            if difference < xl_to_headland.distance(target):
                 continue
 
             # make constructed line covering the line pair and check for intersection with headland
@@ -338,8 +374,16 @@ def simplify_ab_lines(
                 coords = list(line_1.coords)[::-1] + coords
             else:
                 coords = list(line_1.coords) + coords
+            j = 1
+            while j < len(coords):
+                if Point(coords[j]).distance(Point(coords[j-1]))< 0.01:
+                    coords.pop(j)
+                else:  
+                    j += 1
             test_line = LineString(coords)
 
+            # this check should still be insufficient for some cases
+            # but might still be needed for small headland bulges
             is_candidate = True
             for ring in headlands:
                 if test_line.intersects(ring):
@@ -347,7 +391,7 @@ def simplify_ab_lines(
                     break
 
             distance = line_1.distance(target)
-            if is_candidate and distance < best_dist:
+            if distance < best_dist:
                 best_dist = distance
                 best_replacement = test_line
                 best_partner = ii
@@ -358,12 +402,43 @@ def simplify_ab_lines(
             replacements.append(best_replacement)
 
     new_ab_lines: List[LineString] = old_ab_lines.copy()
+    removed_ab_lines = []
     for index in simplify_pairs:
         try:
+            removed_ab_lines.append(old_ab_lines[index])
             new_ab_lines.remove(old_ab_lines[index])
         except ValueError:
             continue
 
+    #debug print ab lines to geojson for visual debugging
+    if route_params.debug_prints:
+        import json
+        import os
+        from shapely.geometry import mapping
+        abline_features = []
+        if isinstance(removed_ab_lines, MultiLineString):
+            lines = list(removed_ab_lines.geoms)
+        elif isinstance(removed_ab_lines, LineString):
+            lines = [removed_ab_lines]
+        else:
+            lines = list(removed_ab_lines.geoms) if hasattr(removed_ab_lines, 'geoms') else removed_ab_lines
+
+        for k, line in enumerate(lines):
+            abline_features.append({
+                "type": "Feature",
+                "properties": {"line_index": k},
+                "geometry": mapping(line)
+            })
+        ablines_geojson = {
+            "type": "FeatureCollection",
+            "features": abline_features
+        }
+        os.makedirs("/tmp/debug", exist_ok=True)
+        with open("/tmp/debug/removed_ablines_debug.geojson", "w") as f:
+            json.dump(ablines_geojson, f, indent=2)
+    # end debug print
+
+    problematic_replacements = []
     # look for overlapping replacements and only take one covering both
     i = 0
     while i < len(replacements):
@@ -375,13 +450,69 @@ def simplify_ab_lines(
             if replacement == other_replacement:
                 replacements.pop(ii)
             elif replacement.dwithin(other_replacement, 1.0):
-                replacement = linemerge(unary_union([replacement, other_replacement]))
+                temp_replacement = linemerge(unary_union([replacement, other_replacement]))  # this fails on lines that arent sharing an endpoint
+                if isinstance(temp_replacement, MultiLineString):
+                    problematic_replacements.append(replacement)
+                    problematic_replacements.append(other_replacement)
+                    p1, p2 = nearest_points(replacement, other_replacement)
+
+                    # Find which endpoints are closest and connect them
+                    if isinstance(replacement, MultiLineString):
+                        replacement = linemerge(replacement)
+                    if isinstance(other_replacement, MultiLineString):
+                        other_replacement = linemerge(other_replacement)
+                    coords1 = list(replacement.coords)
+                    coords2 = list(other_replacement.coords)
+
+                    # Orient both lines so the closest endpoints face each other
+                    if Point(coords1[0]).distance(p1) < Point(coords1[-1]).distance(p1):
+                        coords1 = coords1[::-1]
+                    if Point(coords2[0]).distance(p2) < Point(coords2[-1]).distance(p2):
+                        coords2 = coords2[::-1]
+
+                    temp_replacement = LineString(coords1 + coords2)
+                replacement = temp_replacement
                 replacements.pop(ii)
             else:
                 ii += 1
 
         i += 1
+        if isinstance(replacement, MultiLineString):
+            temp_replacement = []
+            for line in replacement.geoms:
+                temp_replacement.append(line.coords)
+            replacement = LineString([coord for line in temp_replacement for coord in line])
         new_ab_lines.append(replacement)
+
+
+    #debug print ab lines to geojson for visual debugging
+    if route_params.debug_prints:
+        import json
+        import os
+        from shapely.geometry import mapping
+        abline_features = []
+        if isinstance(problematic_replacements, MultiLineString):
+            lines = list(problematic_replacements.geoms)
+        elif isinstance(problematic_replacements, LineString):
+            lines = [problematic_replacements]
+        else:
+            lines = list(problematic_replacements.geoms) if hasattr(problematic_replacements, 'geoms') else problematic_replacements
+
+        for k, line in enumerate(lines):
+            abline_features.append({
+                "type": "Feature",
+                "properties": {"line_index": k},
+                "geometry": mapping(line)
+            })
+        ablines_geojson = {
+            "type": "FeatureCollection",
+            "features": abline_features
+        }
+        os.makedirs("/tmp/debug", exist_ok=True)
+        with open("/tmp/debug/problematic_replacements_debug.geojson", "w") as f:
+            json.dump(ablines_geojson, f, indent=2)
+    # end debug print
+
 
     # discard ab lines if on headland
     multi_headland = MultiLineString(headlands)
