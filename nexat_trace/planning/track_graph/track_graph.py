@@ -783,11 +783,14 @@ class TrackGraph:
 
                     ids = new_path.indices()
                     if len(ids) >= 3:
-                        line1 = LineString([self.get_node(ids[-3]).position, self.get_node(ids[-2]).position])
-                        line2 = LineString([self.get_node(ids[-2]).position, self.get_node(ids[-1]).position])
-                        if abs(angle_between_lines(line1, line2)) > pi/2:
-                            print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle in TrackGraph search")
-                            continue
+                        is_ring_hop = (self.get_node(ids[-3]).ring_index != self.get_node(ids[-2]).ring_index
+                                       or self.get_node(ids[-2]).ring_index != self.get_node(ids[-1]).ring_index)
+                        if is_ring_hop:
+                            line1 = LineString([self.get_node(ids[-3]).position, self.get_node(ids[-2]).position])
+                            line2 = LineString([self.get_node(ids[-2]).position, self.get_node(ids[-1]).position])
+                            if abs(angle_between_lines(line1, line2)) > pi/2:
+                                print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle in TrackGraph search")
+                                continue
 
                     i = 0
                     while i < len(agenda) and new_path.estimated_cost > agenda[i].estimated_cost:

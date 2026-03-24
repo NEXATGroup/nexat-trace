@@ -413,11 +413,14 @@ class NetGraph:
                         
                         ids = new_path.indices()
                         if len(ids) >= 3:
-                            line1 = LineString([self.track_graph.get_node(ids[-3]).position, self.track_graph.get_node(ids[-2]).position])
-                            line2 = LineString([self.track_graph.get_node(ids[-2]).position, self.track_graph.get_node(ids[-1]).position])
-                            if abs(angle_between_lines(line1, line2)) > pi/2:
-                                print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle")
-                                continue
+                            is_ring_hop = (self.track_graph.get_node(ids[-3]).ring_index != self.track_graph.get_node(ids[-2]).ring_index
+                                           or self.track_graph.get_node(ids[-2]).ring_index != self.track_graph.get_node(ids[-1]).ring_index)
+                            if is_ring_hop:
+                                line1 = LineString([self.track_graph.get_node(ids[-3]).position, self.track_graph.get_node(ids[-2]).position])
+                                line2 = LineString([self.track_graph.get_node(ids[-2]).position, self.track_graph.get_node(ids[-1]).position])
+                                if abs(angle_between_lines(line1, line2)) > pi/2:
+                                    print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle")
+                                    continue
 
                         i = len(agenda) - 1
 
