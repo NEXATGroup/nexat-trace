@@ -1,8 +1,10 @@
 from typing import List, Tuple
 
+from matplotlib.pylab import pi
 from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
 from shapely.ops import substring
 from shapely.strtree import STRtree
+from math import pi
 
 from nexat_trace.planning.path import Path
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
@@ -16,7 +18,7 @@ from nexat_trace.shared.weights import Weights
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
-
+from nexat_trace.util.geom_tools import angle_between_lines
 
 class TrackGraph:
     """
@@ -778,8 +780,16 @@ class TrackGraph:
                 if insert:
 
                     paths.update({new_path.last_pos(): new_path})
-                    i = 0
 
+                    ids = new_path.indices()
+                    if len(ids) >= 3:
+                        line1 = LineString([self.get_node(ids[-3]).position, self.get_node(ids[-2]).position])
+                        line2 = LineString([self.get_node(ids[-2]).position, self.get_node(ids[-1]).position])
+                        if abs(angle_between_lines(line1, line2)) > pi/2:
+                            print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle in TrackGraph search")
+                            continue
+
+                    i = 0
                     while i < len(agenda) and new_path.estimated_cost > agenda[i].estimated_cost:
                         i += 1
 
@@ -846,7 +856,7 @@ class TrackGraph:
                       and len(nodes) > 1
                       and nearest_node.get_metrics(nodes[-2].index) is not None):
                     # node is not connected on the graph to the current node
-                    # we should keep the one closest to the path
+                    # we should keep the one closest to the path not just any that is at any point the closest to the path
                     if nearest_node.position.distance(path_segment) < current_node.position.distance(path_segment):
                         nodes.pop()
                     else:
@@ -1020,7 +1030,6 @@ class TrackGraph:
                     print(
                         "Consecutive primary nodes were not part of the same AB line in the loaded graph - "
                         + "Skipping to line of primary neighbor"
-                        + f" (skipped from line {preSkip} to line {i})"
                     )
                     print(f"Swapped from ab_ index {i} to {skip_index} while searching for nodes on path")
 

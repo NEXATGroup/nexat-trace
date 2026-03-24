@@ -1,7 +1,8 @@
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
-from shapely import MultiPolygon, Polygon
+from shapely import LineString, MultiPolygon, Polygon
+from math import pi
 
 from nexat_trace.planning.net_graph.net_node import NetNode
 from nexat_trace.planning.path import Path
@@ -12,6 +13,7 @@ from nexat_trace.planning.track_graph.track_graph_node import TrackGraphNode
 from nexat_trace.shared import progress
 from nexat_trace.shared.config import RoutePlanningConfig
 from nexat_trace.shared.weights import Weights
+from nexat_trace.util.geom_tools import angle_between_lines
 
 
 class NetGraph:
@@ -91,6 +93,8 @@ class NetGraph:
         self.set_exclude_areas(self.exclude_areas)
 
         if route_params.debug_prints:
+            if route_params.debug_plot_net_graph:
+                self.plot()
             print("Net graph built")
 
     def set_edge(
@@ -296,13 +300,18 @@ class NetGraph:
         from shapely import LineString  # noqa: I001
         from ...util import plot_geometry as pg
 
-        for i in range(len(self.nodes.values())):
-            node = self.nodes[i]
+        nodes = list(self.nodes.values())
+        for i, node in enumerate(nodes):
+            if i != 0:
+                continue
             track_node = self.get_track_node(node.index)
+            if track_node is None:
+                continue
             pg.plot_point(track_node.position)
-            for ii in range(i, len(self.nodes.values())):
-                other_node = self.nodes[ii]
+            for other_node in nodes[i + 1:]:
                 other_track_node = self.get_track_node(other_node.index)
+                if other_track_node is None:
+                    continue
                 ls = LineString([track_node.position, other_track_node.position])
                 pg.plot_linestring(ls, linewidth=1)
         pg.show_plot()
@@ -401,6 +410,14 @@ class NetGraph:
 
                         if isinstance(neighbor, PrimaryTrackGraphNode):
                             continue
+                        
+                        ids = new_path.indices()
+                        if len(ids) >= 3:
+                            line1 = LineString([self.track_graph.get_node(ids[-3]).position, self.track_graph.get_node(ids[-2]).position])
+                            line2 = LineString([self.track_graph.get_node(ids[-2]).position, self.track_graph.get_node(ids[-1]).position])
+                            if abs(angle_between_lines(line1, line2)) > pi/2:
+                                print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle")
+                                continue
 
                         i = len(agenda) - 1
 

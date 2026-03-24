@@ -144,7 +144,7 @@ def net_graph_from_track_system(
         progress_out,
         limit
     )
-
+    
     return net, ab_lines, outer_headland_shape, outer_field_border, planning_msgs
 
 
