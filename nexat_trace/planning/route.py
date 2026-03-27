@@ -62,6 +62,7 @@ class Route:
         self._metrics: EdgeMetrics = metrics
         self.turns: Dict = None
         self.distance_on_headland: float = None
+        self.distance_curves: float = None
 
         self._target_headlands = target_headlands
         self._field_border = field_border
@@ -215,6 +216,7 @@ class Route:
 
         multi_headland = MultiLineString(self._target_headlands)
         self.distance_on_headland = 0.0
+        self.distance_curves = 0.0
 
         mixed_path: List[TrackGraphNode | Point] = []
         self._path = []
@@ -232,6 +234,9 @@ class Route:
             intersection = buffered_curve.intersection(multi_headland)
             if isinstance(intersection, (LineString, MultiLineString)):
                 self.distance_on_headland += intersection.length
+                self.distance_curves += curve.path.length - intersection.length
+            else:
+                self.distance_curves += curve.path.length
 
         parts = self._split_parts()
 
