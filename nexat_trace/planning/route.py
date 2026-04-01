@@ -373,11 +373,12 @@ class Route:
         if (
             self._route_params.disable_pi_curves
             and not self._route_params.working_corridor_extension
-            and len(self.self._segmented_path) > 1
+            and len(self._segmented_path) > 1
         ):
-            first_intersection_dist = self._line.project(self._segmented_path)
+            first_intersection_dist = self._line.project(self._segmented_path[0][-1])
             self._line = gt.substring(self._line, 0, first_intersection_dist)
             self._segmented_path = self._segmented_path[0]
+            self._multi_line = MultiLineString([self._line])
             if self._route_params.debug_prints:
                 print("Got a segmented path, when we shouldn't")
                 self.planning_messages.append(PlanningMsg.UNEXPECTED_SEGMENTATION)
