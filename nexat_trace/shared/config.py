@@ -269,7 +269,7 @@ class RoutePlanningConfig:
 
         self.min_ab_line_length = 0.1  # m
 
-        self.disable_pi_curves = False
+        self.disable_pi_curves = True
 
     def copy(self):
         """
