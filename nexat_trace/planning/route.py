@@ -9,7 +9,7 @@ from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.planning.track_graph.primary_track_graph_node import PrimaryTrackGraphNode
 from nexat_trace.planning.track_graph.track_graph_node import TrackGraphNode
 from nexat_trace.shared import progress
-from nexat_trace.shared.config import CurveType, RoutePlanningConfig
+from nexat_trace.shared.config import CurveType, RoutePlanningConfig, CorridorStrategy
 from nexat_trace.shared.curve import Curve
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
@@ -372,7 +372,7 @@ class Route:
             )
         if (
             self._route_params.disable_pi_curves
-            and not self._route_params.working_corridor_extension
+            and not self._route_params.corridor_strategy == CorridorStrategy.DRIVE_NONE
             and len(self._segmented_path) > 1
         ):
             first_intersection_dist = self._line.project(self._segmented_path[0][-1])
