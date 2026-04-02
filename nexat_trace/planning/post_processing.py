@@ -205,10 +205,12 @@ def cutout_avoidance(route: Route) -> None:
 
                 curve_on = LineString(list(curve_on.coords) + [extension_point])
 
+            s_d = 0.011 # s_d
+            end_dist = curve_on_ab_segment.project(Point(curve_on.coords[0])) - s_d
             curve_on_ab_segment = substring(
                 curve_on_ab_segment,
-                0.0,
-                curve_on_ab_segment.project(Point(curve_on.coords[0])),
+                max(0,min(s_d, end_dist - 0.001)),
+                end_dist,
             )
 
             coords = [intersection.end]
@@ -253,7 +255,7 @@ def cutout_avoidance(route: Route) -> None:
 
             rest_path = substring(
                 rest_path,
-                rest_path.project(Point(curve_off.coords[-1])),
+                max(0,min(rest_path.project(Point(curve_off.coords[-1])) +s_d, rest_path.length - 0.001)),
                 rest_path.length,
             )
 
@@ -263,6 +265,10 @@ def cutout_avoidance(route: Route) -> None:
                 Point(curve_on.coords[-1]),
                 Point(curve_off.coords[0])
             )
+            end_dist = cut_segment_path.length - s_d
+            cut_segment_path = geom_tools.substring(
+                cut_segment_path, max(0,min(s_d, end_dist - 0.001)), end_dist
+                )
 
             should_be_circled = (
                 route._route_params.fully_circle_cutouts  # is parameter set?
@@ -275,8 +281,11 @@ def cutout_avoidance(route: Route) -> None:
             if should_be_circled:
                 aligned_segment_circle = geom_tools.ring_with_origin_at(aligned_segment, Point(curve_on.coords[-1]))
                 # insert circle points before the rest of the calculated segment
+                circle = LineString([Point(coord) for coord in aligned_segment_circle.coords])
+                end_dist = circle.length - s_d
+                circle = geom_tools.substring(circle, max(0,min(s_d, end_dist - 0.001)), end_dist)
                 cut_segment_path_points = (
-                    [Point(coord) for coord in aligned_segment_circle.coords]
+                    [Point(coord) for coord in list(circle.coords)]
                     + cut_segment_path_points
                 )
 
