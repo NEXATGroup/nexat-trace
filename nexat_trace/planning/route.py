@@ -375,14 +375,15 @@ class Route:
             and not self._route_params.corridor_strategy == CorridorStrategy.DRIVE_NONE
             and len(self._segmented_path) > 1
         ):
-            first_intersection_dist = self._line.project(self._segmented_path[0][-1])
-            self._line = gt.substring(self._line, 0, first_intersection_dist)
-            self._segmented_path = self._segmented_path[0]
-            self._multi_line = MultiLineString([self._line])
+            self._line = LineString()
+            self._segmented_path = []
+            self._multi_line = MultiLineString()
+            self._metrics.distance = 0
+            self._metrics.time = 0
+            self.planning_messages.append(PlanningMsg.UNEXPECTED_SEGMENTATION)
             if self._route_params.debug_prints:
                 print("Got a segmented path, when we shouldn't")
-                self.planning_messages.append(PlanningMsg.UNEXPECTED_SEGMENTATION)
-
+                
 
         self._calculate_area()
 

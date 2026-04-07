@@ -123,8 +123,6 @@ class RoutePlanningConfig:
         cleared manually in the meantime.
     - debug_plot_track_graph:
         Wether or not the planner should plot the field graph before route optimization
-    - debug_plot_net_graph:
-        Wether or not the planner should plot the net graph before route optimization
 
     Private members
     -------------
@@ -247,7 +245,6 @@ class RoutePlanningConfig:
         # debug plotting using matplotlib
         self.debug_plot_field: bool = False
         self.debug_plot_track_graph: bool = False
-        self.debug_plot_net_graph: bool = False
 
         #
         # ---------------- MISC PARAMETERS ----------------- #
@@ -299,7 +296,6 @@ class RoutePlanningConfig:
         new.debug_prints = self.debug_prints
         new.debug_plot_field = self.debug_plot_field
         new.debug_plot_track_graph = self.debug_plot_track_graph
-        new.debug_plot_net_graph = self.debug_plot_net_graph
         new.vehicle_speed_straight = self.vehicle_speed_straight
         new.vehicle_speed_curve = self.vehicle_speed_curve
         new.speed_curve_angle_threshold = self.speed_curve_angle_threshold
@@ -342,7 +338,6 @@ class RoutePlanningConfig:
             f"  debug_prints={self.debug_prints},\n"
             f"  debug_plot_field={self.debug_plot_field},\n"
             f"  debug_plot_track_graph={self.debug_plot_track_graph},\n"
-            f"  debug_plot_net_graph={self.debug_plot_net_graph},\n"
             f")"
         )
 
@@ -425,7 +420,6 @@ class RoutePlanningConfig:
         new.heuristic_corridor_angle = data["heuristic_corridor_angle"]
         new.debug_plot_field = data["debug_plot_field"]
         new.debug_plot_track_graph = data["debug_plot_track_graph"]
-        new.debug_plot_net_graph = data["debug_plot_net_graph"]
         new.debug_prints = data["debug_prints"]
 
         return new
