@@ -372,7 +372,7 @@ class Route:
             )
         if (
             self._route_params.disable_pi_curves
-            and not self._route_params.corridor_strategy == CorridorStrategy.DRIVE_NONE
+            and self._route_params.corridor_strategy == CorridorStrategy.DRIVE_NONE
             and len(self._segmented_path) > 1
         ):
             self._line = LineString()
