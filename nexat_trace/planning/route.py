@@ -9,6 +9,7 @@ from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.planning.track_graph.primary_track_graph_node import PrimaryTrackGraphNode
 from nexat_trace.planning.track_graph.track_graph_node import TrackGraphNode
 from nexat_trace.shared import progress
+from nexat_trace.shared.exceptions import RoutePlanningError
 from nexat_trace.shared.config import CurveType, RoutePlanningConfig, CorridorStrategy
 from nexat_trace.shared.curve import Curve
 from nexat_trace.shared.planning_messages import PlanningMsg
@@ -384,6 +385,8 @@ class Route:
             if self._route_params.debug_prints:
                 print("Got a segmented path, when we shouldn't")
                 
+        if len(self._segmented_path) > 1:
+            check_segment_direction_change(self._segmented_path)
 
         self._calculate_area()
 
@@ -456,3 +459,17 @@ def _calculate_drive_time(
             duration += time_on_direction_change
 
     return duration
+
+def check_segment_direction_change(segments: List[List[Point]]):
+    """
+    Checks if path is only segmented at direction changes.
+    """
+
+    for i in range(0, len(segments) - 1):
+        is_same_start_stop = segments[i][-1] == segments[i+1][0]
+        is_direction_change = abs(
+            gt.angle_between_lines(LineString(segments[i][-2:]), LineString(segments[i+1][:2]))
+            ) > 0.9 * pi
+        if not is_same_start_stop or not is_direction_change:
+            raise RoutePlanningError("Unexpected segmentation of path. Segments should only be split at direction changes.")
+    return 0
