@@ -386,7 +386,7 @@ class Route:
                 print("Got a segmented path, when we shouldn't")
                 
         if len(self._segmented_path) > 1:
-            check_segment_direction_change(self._segmented_path)
+            self.check_segment_direction_change(self._segmented_path)
 
         self._calculate_area()
 
@@ -429,6 +429,26 @@ class Route:
         if self._covered_area is None:
             self._calculate_area()
         return self._covered_area
+    
+    def check_segment_direction_change(self, segments: List[List[Point]]):
+        """Checks if path is only segmented at direction changes."""
+
+        for i in range(0, len(segments) - 1):
+            is_same_start_stop = segments[i][-1] == segments[i+1][0]
+            is_direction_change = abs(
+                gt.angle_between_lines(LineString(segments[i][-2:]), LineString(segments[i+1][:2]))
+                ) > 0.9 * pi
+            if not is_same_start_stop or not is_direction_change:
+                self.planning_messages.append(PlanningMsg.NO_DIRECTION_CHANGE_AT_SEGMENTATION)
+                self._line = LineString()
+                self._segmented_path = []
+                self._multi_line = MultiLineString()
+                self._metrics.distance = 0
+                self._metrics.time = 0
+                if self._route_params.debug_prints:
+                    print("Got a segmentation without direction change or not at the same point")
+                return
+        return
 
 
 def _calculate_drive_time(
@@ -460,16 +480,4 @@ def _calculate_drive_time(
 
     return duration
 
-def check_segment_direction_change(segments: List[List[Point]]):
-    """
-    Checks if path is only segmented at direction changes.
-    """
 
-    for i in range(0, len(segments) - 1):
-        is_same_start_stop = segments[i][-1] == segments[i+1][0]
-        is_direction_change = abs(
-            gt.angle_between_lines(LineString(segments[i][-2:]), LineString(segments[i+1][:2]))
-            ) > 0.9 * pi
-        if not is_same_start_stop or not is_direction_change:
-            raise RoutePlanningError("Unexpected segmentation of path. Segments should only be split at direction changes.")
-    return 0

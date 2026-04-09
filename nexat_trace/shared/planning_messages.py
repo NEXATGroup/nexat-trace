@@ -32,3 +32,7 @@ class PlanningMsg(Enum):
 
     # Path segmentation when there shouldn't be one, Path will be trimmed
     UNEXPECTED_SEGMENTATION = 8
+
+    # Path segmentation without direction change or start and end of segments are not the same
+    NO_DIRECTION_CHANGE_AT_SEGMENTATION = 9
+
