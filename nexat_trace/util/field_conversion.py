@@ -744,6 +744,7 @@ def working_corridor_of_ab_line(
         ab_line: LineString,
         working_width: float,
         border_poly: Polygon,
+        turning_headland: LinearRing,
         cutout_polys: List[Polygon] | None,
         start_point: Point | None = None) -> Polygon | None:
     """
@@ -821,7 +822,9 @@ def working_corridor_of_ab_line(
 def get_corridor_line(
         ab_line: LineString,
         working_width: float,
-        inner_border: LinearRing) -> LineString:
+        inner_border: LinearRing,
+        turning_headland: LinearRing,
+        ) -> LineString:
     """
     Returns the working corridor line of an ab line within an inner border.
     """
@@ -833,6 +836,7 @@ def get_corridor_line(
         ab_line,
         working_width,
         Polygon(inner_border),
+        turning_headland,
         []
     )
 
@@ -843,6 +847,48 @@ def get_corridor_line(
         corridor_poly
     )
     corridor_line = corridor_line.intersection(corridor_poly)
+    if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
+        return corridor_line
+    return ab_line
+
+# still needs some thought, if I want to return to that later. 
+def get_corridor_line(
+        ab_line: LineString,
+        working_width: float,
+        turning_headland: LinearRing,
+        ) -> LineString:
+
+    headland_poly = Polygon(turning_headland)
+    half_width = working_width / 2.0
+
+    # Extend AB line to the turning headland
+    extended = gt.extend_line_in_bounds(ab_line, headland_poly)
+
+    # Create left/right offsets and clip to headland
+    left_offset = extended.offset_curve(half_width)
+    right_offset = extended.offset_curve(-half_width)
+
+    left_clipped = left_offset.intersection(headland_poly)
+    right_clipped = right_offset.intersection(headland_poly)
+
+    if not isinstance(left_clipped, LineString) or not isinstance(right_clipped, LineString):
+        return extended  # fallback
+
+    # Project the clipped offset endpoints onto the extended center line
+    # to find where the full working width still fits
+    left_start_proj = extended.project(Point(left_clipped.coords[0]))
+    left_end_proj = extended.project(Point(left_clipped.coords[-1]))
+    right_start_proj = extended.project(Point(right_clipped.coords[0]))
+    right_end_proj = extended.project(Point(right_clipped.coords[-1]))
+
+    # The valid range is where BOTH offsets exist
+    valid_start = max(min(left_start_proj, left_end_proj), min(right_start_proj, right_end_proj))
+    valid_end = min(max(left_start_proj, left_end_proj), max(right_start_proj, right_end_proj))
+
+    if valid_end <= valid_start:
+        return ab_line  # fallback
+
+    corridor_line = substring(extended, valid_start, valid_end)
     if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
         return corridor_line
     return ab_line

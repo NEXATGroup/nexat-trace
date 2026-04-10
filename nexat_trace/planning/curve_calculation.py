@@ -1097,7 +1097,7 @@ def insert_hook_stops_to_headland(
         backup_point = working_corridor_oriented.interpolate(
             working_corridor_oriented.project(
                 curve_start
-            ) - route_params.direction_change_extension_distance
+            )
         )
         backup_point = working_corridor_oriented.interpolate(working_corridor_oriented.project(backup_point))
         points.insert(0, backup_point)
