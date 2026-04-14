@@ -75,10 +75,7 @@ def get_secondary_positions(
 
     multi_ab_lines_unextended = MultiLineString(cut_ab_lines)
 
-    for j, line in enumerate(cut_ab_lines):
-        print(f"Processing line {j+1}/{len(cut_ab_lines)} for secondary positions")
-        if j == 58:
-            print("Debug breakpoint")
+    for line in cut_ab_lines:
         # Check front of line for collisions
         forward_line = LineString(line)
         forward_end = Point(line.coords[-1])
@@ -410,34 +407,6 @@ def simplify_ab_lines(
         except ValueError:
             continue
 
-    #debug print ab lines to geojson for visual debugging
-    if route_params.debug_prints:
-        import json
-        import os
-        from shapely.geometry import mapping
-        abline_features = []
-        if isinstance(removed_ab_lines, MultiLineString):
-            lines = list(removed_ab_lines.geoms)
-        elif isinstance(removed_ab_lines, LineString):
-            lines = [removed_ab_lines]
-        else:
-            lines = list(removed_ab_lines.geoms) if hasattr(removed_ab_lines, 'geoms') else removed_ab_lines
-
-        for k, line in enumerate(lines):
-            abline_features.append({
-                "type": "Feature",
-                "properties": {"line_index": k},
-                "geometry": mapping(line)
-            })
-        ablines_geojson = {
-            "type": "FeatureCollection",
-            "features": abline_features
-        }
-        os.makedirs("/tmp/debug", exist_ok=True)
-        with open("/tmp/debug/removed_ablines_debug.geojson", "w") as f:
-            json.dump(ablines_geojson, f, indent=2)
-    # end debug print
-
     problematic_replacements = []
     # look for overlapping replacements and only take one covering both
     i = 0
@@ -483,36 +452,6 @@ def simplify_ab_lines(
                 temp_replacement.append(line.coords)
             replacement = LineString([coord for line in temp_replacement for coord in line])
         new_ab_lines.append(replacement)
-
-
-    #debug print ab lines to geojson for visual debugging
-    if route_params.debug_prints:
-        import json
-        import os
-        from shapely.geometry import mapping
-        abline_features = []
-        if isinstance(problematic_replacements, MultiLineString):
-            lines = list(problematic_replacements.geoms)
-        elif isinstance(problematic_replacements, LineString):
-            lines = [problematic_replacements]
-        else:
-            lines = list(problematic_replacements.geoms) if hasattr(problematic_replacements, 'geoms') else problematic_replacements
-
-        for k, line in enumerate(lines):
-            abline_features.append({
-                "type": "Feature",
-                "properties": {"line_index": k},
-                "geometry": mapping(line)
-            })
-        ablines_geojson = {
-            "type": "FeatureCollection",
-            "features": abline_features
-        }
-        os.makedirs("/tmp/debug", exist_ok=True)
-        with open("/tmp/debug/problematic_replacements_debug.geojson", "w") as f:
-            json.dump(ablines_geojson, f, indent=2)
-    # end debug print
-
 
     # discard ab lines if on headland
     multi_headland = MultiLineString(headlands)

@@ -1,6 +1,5 @@
 from typing import List, Tuple
 
-from matplotlib.pylab import pi
 from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
 from shapely.ops import substring
 from shapely.strtree import STRtree
@@ -82,37 +81,6 @@ class TrackGraph:
         self.line_tree = STRtree(self.ab_lines)
         self.secondary_node_tree = STRtree([node.position for node in self.secondary_nodes])
         self.primary_node_tree = STRtree([node.position for node in self.primary_nodes])
-
-        import os
-        import json
-        if route_params.debug_prints:
-            os.makedirs("/tmp/debug", exist_ok=True)
-            with open("/tmp/debug/primary_nodes.json", "w") as f:
-                json.dump(
-                    [
-                        {
-                            "index": node.index,
-                            "position": [node.position.x, node.position.y],
-                            "ring_index": node.ring_index
-                        }
-                        for node in primary_nodes
-                    ],
-                    f,
-                    indent=4
-                )
-            with open("/tmp/debug/secondary_nodes.json", "w") as f:
-                json.dump(
-                    [
-                        {
-                            "index": node.index,
-                            "position": [node.position.x, node.position.y],
-                            "ring_index": node.ring_index
-                        }
-                        for node in secondary_nodes
-                    ],
-                    f,
-                    indent=4
-                )
 
         for primary in primary_nodes:
             headland = min(self.target_headlands, key = lambda ring: ring.distance(primary.position))
