@@ -3,7 +3,7 @@ import time
 from typing import List, Tuple
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-from shapely import LinearRing, LineString, MultiPolygon, Point, MultiLineString
+from shapely import LinearRing, LineString, MultiLineString, MultiPolygon, Point
 
 from nexat_trace.planning.net_graph.net_graph import NetGraph
 from nexat_trace.planning.route import Route

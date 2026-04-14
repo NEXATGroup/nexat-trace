@@ -1,8 +1,8 @@
 from collections import defaultdict
+from math import pi
 from typing import Dict, List, Tuple
 
 from shapely import LineString, MultiPolygon, Polygon
-from math import pi
 
 from nexat_trace.planning.net_graph.net_node import NetNode
 from nexat_trace.planning.path import Path
@@ -410,15 +410,21 @@ class NetGraph:
 
                         if isinstance(neighbor, PrimaryTrackGraphNode):
                             continue
-                        
+
                         ids = new_path.indices()
                         if len(ids) >= 3:
-                            is_ring_hop = (self.track_graph.get_node(ids[-3]).ring_index != self.track_graph.get_node(ids[-2]).ring_index
-                                           or self.track_graph.get_node(ids[-2]).ring_index != self.track_graph.get_node(ids[-1]).ring_index)
+                            is_ring_hop = (
+                                self.track_graph.get_node(ids[-3]).ring_index != self.track_graph.get_node(ids[-2]).ring_index
+                                or self.track_graph.get_node(ids[-2]).ring_index != self.track_graph.get_node(ids[-1]).ring_index
+                            )
                             if is_ring_hop:
-                                line1 = LineString([self.track_graph.get_node(ids[-3]).position, self.track_graph.get_node(ids[-2]).position])
-                                line2 = LineString([self.track_graph.get_node(ids[-2]).position, self.track_graph.get_node(ids[-1]).position])
-                                if abs(angle_between_lines(line1, line2)) > pi/2:
+                                line1 = LineString(
+                                    [self.track_graph.get_node(ids[-3]).position, self.track_graph.get_node(ids[-2]).position]
+                                )
+                                line2 = LineString(
+                                    [self.track_graph.get_node(ids[-2]).position, self.track_graph.get_node(ids[-1]).position]
+                                )
+                                if abs(angle_between_lines(line1, line2)) > pi / 2:
                                     print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle")
                                     continue
 

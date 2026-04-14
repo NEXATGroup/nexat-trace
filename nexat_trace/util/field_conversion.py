@@ -14,7 +14,7 @@ from shapely import (
     oriented_envelope,
     unary_union,
 )
-from shapely.ops import linemerge, substring, nearest_points
+from shapely.ops import linemerge, nearest_points, substring
 
 from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
 from nexat_trace.shared.config import RoutePlanningConfig
@@ -306,7 +306,7 @@ def simplify_ab_lines(
     for ring in headlands:
         max_extension_length += ring.length
 
-    for i in range(len(old_ab_lines)-1):
+    for i in range(len(old_ab_lines) - 1):
         line_1 = old_ab_lines[i]
 
         if line_1.length < route_params.min_ab_line_length:
@@ -317,7 +317,7 @@ def simplify_ab_lines(
 
         xl = gt.extend_line(line_1, max_extension_length)
 
-        xl_intersections = [] 
+        xl_intersections = []
         for ring in headlands:
             intersection = xl.intersection(ring)
             if isinstance(intersection, MultiPoint):
@@ -326,9 +326,9 @@ def simplify_ab_lines(
                 xl_intersections.append(intersection)
                 if route_params.debug_prints:
                     print("Only one intersection with headland for line, might return wrong results")
-        
+
         # Trim xl to the segment between the two closest intersections
-        # This moves the headland intersection check to here and should make it more reliable      
+        # This moves the headland intersection check to here and should make it more reliable
         if len(xl_intersections) >= 2:
             centroid = line_1.centroid
             centroid_proj = xl.project(centroid)
@@ -341,11 +341,10 @@ def simplify_ab_lines(
                 closest_after = min(after, key=lambda p: xl.project(p))
                 xl_to_headland = substring(xl, xl.project(closest_before), xl.project(closest_after))
 
-
         best_replacement = None
         best_dist = float('inf')
 
-        for ii in range(i+1, len(old_ab_lines)):
+        for ii in range(i + 1, len(old_ab_lines)):
             line_2 = old_ab_lines[ii]
 
             if line_1.equals(line_2):
@@ -356,7 +355,7 @@ def simplify_ab_lines(
             # Find closest point on 2nd line and orient coordinates accordingly
             start = Point(line_2.coords[0])
             end = Point(line_2.coords[-1])
-            if line_1.distance(start) < line_1.distance(end):  # for kinked ab lines this could be dependent on machine precision? Since lines could be parallel here
+            if line_1.distance(start) < line_1.distance(end):
                 target = start
                 coords = list(line_2.coords)
             else:
@@ -373,18 +372,16 @@ def simplify_ab_lines(
                 coords = list(line_1.coords) + coords
             j = 1
             while j < len(coords):
-                if Point(coords[j]).distance(Point(coords[j-1]))< 0.01:
+                if Point(coords[j]).distance(Point(coords[j - 1])) < 0.01:
                     coords.pop(j)
-                else:  
+                else:
                     j += 1
             test_line = LineString(coords)
 
             # this check should still be insufficient for some cases
             # but might still be needed for small headland bulges
-            is_candidate = True
             for ring in headlands:
                 if test_line.intersects(ring):
-                    is_candidate = False
                     break
 
             distance = line_1.distance(target)
@@ -419,7 +416,8 @@ def simplify_ab_lines(
             if replacement == other_replacement:
                 replacements.pop(ii)
             elif replacement.dwithin(other_replacement, 1.0):
-                temp_replacement = linemerge(unary_union([replacement, other_replacement]))  # this fails on lines that arent sharing an endpoint
+                # The following line fails on lines that arent sharing an endpoint
+                temp_replacement = linemerge(unary_union([replacement, other_replacement]))
                 if isinstance(temp_replacement, MultiLineString):
                     problematic_replacements.append(replacement)
                     problematic_replacements.append(other_replacement)

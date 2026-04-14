@@ -1,9 +1,9 @@
+from math import pi
 from typing import List, Tuple
 
 from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
 from shapely.ops import substring
 from shapely.strtree import STRtree
-from math import pi
 
 from nexat_trace.planning.path import Path
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
@@ -18,6 +18,7 @@ from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
 from nexat_trace.util.geom_tools import angle_between_lines
+
 
 class TrackGraph:
     """
@@ -756,8 +757,11 @@ class TrackGraph:
                         if is_ring_hop:
                             line1 = LineString([self.get_node(ids[-3]).position, self.get_node(ids[-2]).position])
                             line2 = LineString([self.get_node(ids[-2]).position, self.get_node(ids[-1]).position])
-                            if abs(angle_between_lines(line1, line2)) > pi/2:
-                                print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle in TrackGraph search")
+                            if abs(angle_between_lines(line1, line2)) > pi / 2:
+                                print(
+                                    f"skipped neighbor {to_index} for node {from_index} because of sharp angle in TrackGraph"
+                                    + " search"
+                                )
                                 continue
 
                     i = 0
@@ -1016,12 +1020,11 @@ class TrackGraph:
                     i += 1
                     next_line = ab_line_set[i + 1]
                     next_primary = self.primary_nodes[self.primary_node_tree.nearest(Point(next_line.coords[0]))]
-                    if next_primary == node2 and i == len(ab_line_set) - 2:
-                        if self.route_params.debug_prints:
-                            print(
-                                "Could not find next primary node on path after current ab line - "
-                                + "Skipping search for secondary nodes to next ab line"
-                            )
+                    if next_primary == node2 and i == len(ab_line_set) - 2 and self.route_params.debug_prints:
+                        print(
+                            "Could not find next primary node on path after current ab line - "
+                            + "Skipping search for secondary nodes to next ab line"
+                        )
 
                 nodes.extend(self._get_secondaries_between_primaries_on_path(node2, next_primary, cut_path))
 
