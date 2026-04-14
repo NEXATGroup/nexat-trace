@@ -129,7 +129,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             got_one_secondary = True
 
         if not got_one_secondary:
-            print ("No secondary neighbor was drivably reachable from primary neighbor, trying front and back secondaries")
+            print("No secondary neighbor was drivably reachable from primary neighbor, trying front and back secondaries")
             secondary1 = intersecting_secondary.back_secondary
             line2 = LineString([secondary1.position, secondary1.back_secondary.position])
             line3 = LineString([front_corridor.position, intersecting_secondary.position])
