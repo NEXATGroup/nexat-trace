@@ -302,8 +302,6 @@ class NetGraph:
 
         nodes = list(self.nodes.values())
         for i, node in enumerate(nodes):
-            if i != 0:
-                continue
             track_node = self.get_track_node(node.index)
             if track_node is None:
                 continue
@@ -425,7 +423,8 @@ class NetGraph:
                                     [self.track_graph.get_node(ids[-2]).position, self.track_graph.get_node(ids[-1]).position]
                                 )
                                 if abs(angle_between_lines(line1, line2)) > pi / 2:
-                                    print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle")
+                                    if self.route_params.debug_prints:
+                                        print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle")
                                     continue
 
                         i = len(agenda) - 1

@@ -758,10 +758,11 @@ class TrackGraph:
                             line1 = LineString([self.get_node(ids[-3]).position, self.get_node(ids[-2]).position])
                             line2 = LineString([self.get_node(ids[-2]).position, self.get_node(ids[-1]).position])
                             if abs(angle_between_lines(line1, line2)) > pi / 2:
-                                print(
-                                    f"skipped neighbor {to_index} for node {from_index} because of sharp angle in TrackGraph"
-                                    + " search"
-                                )
+                                if self.route_params.debug_prints:
+                                    print(
+                                        f"skipped neighbor {to_index} for node {from_index} because of sharp angle in TrackGraph"
+                                        + " search"
+                                    )
                                 continue
 
                     i = 0

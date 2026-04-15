@@ -292,7 +292,7 @@ def connect_rings(
 def simplify_ab_lines(
         old_ab_lines: List[LineString],
         headlands: List[LinearRing],
-        route_params: RoutePlanningConfig) -> Tuple[List[LineString], bool]:
+        route_params: RoutePlanningConfig) -> List[LineString]:
     """
     Removes any vertices in the ab lines accept for the first and last one.
 
