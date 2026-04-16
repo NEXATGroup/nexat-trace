@@ -284,13 +284,13 @@ def calculate_circle(points: List[Tuple[float, float]]) -> Circle:
         x1, y1 = points[0]
         x2, y2 = points[1]
         x3, y3 = points[2]
-        D = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
-        Ux = ((x1**2 + y1**2) * (y2 - y3) + (x2**2 + y2**2) * (y3 - y1) + (x3**2 + y3**2) * (y1 - y2)) / D
-        Uy = ((x1**2 + y1**2) * (x3 - x2) + (x2**2 + y2**2) * (x1 - x3) + (x3**2 + y3**2) * (x2 - x1)) / D
-        radius = np.sqrt((Ux - x1)**2 + (Uy - y1)**2)
-        return {'center': (Ux, Uy), 'radius': radius}
+        d = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+        ux = ((x1**2 + y1**2) * (y2 - y3) + (x2**2 + y2**2) * (y3 - y1) + (x3**2 + y3**2) * (y1 - y2)) / d
+        uy = ((x1**2 + y1**2) * (x3 - x2) + (x2**2 + y2**2) * (x1 - x3) + (x3**2 + y3**2) * (x2 - x1)) / d
+        radius = np.sqrt((ux - x1) ** 2 + (uy - y1) ** 2)
+        return Circle((ux, uy), radius)
     except ZeroDivisionError:
-        return {'center': (0, 0), 'radius': float('inf')}
+        return Circle((0, 0), float("inf"))
 
 
 def line_discontinuities(
@@ -319,7 +319,7 @@ def line_discontinuities(
     """
     if line is None or line.is_empty or not isinstance(line, LineString):
         return []
-  
+
     line_lines = triplewise(list(line.coords))
     segmentation_points = []
 
@@ -337,9 +337,7 @@ def line_discontinuities(
         except Exception:
             print(f"Error calculating angle between lines for points: {points}")
             continue
-        if circle["radius"] == float('inf'):
-            print(f"Angle between lines: {angle} for points: {points}, while circle radius is infinite.")
-        if circle["radius"] < radius_threshold or angle > angle_threshold:
+        if circle.radius < radius_threshold or angle > angle_threshold:
             segmentation_points.append((i, Point(points[1])))
 
     return segmentation_points
@@ -376,12 +374,12 @@ def segment_line(
     if input_linestring is None or input_linestring.is_empty or not isinstance(input_linestring, LineString):
         return [], []
     free_of_duplicates: LineString | None = None
-    try:   
+    try:
         free_of_duplicates = remove_repeated_points(input_linestring, 0.01)
         if not free_of_duplicates.is_valid:
-            print('Fuck')
+            print("Geometry is not valid after removing duplicates.")
             # free_of_duplicates = input_linestring
-    except Exception as e:
+    except Exception:
         free_of_duplicates = input_linestring
     if len(free_of_duplicates.coords) < 2:
         return [], []
@@ -393,7 +391,7 @@ def segment_line(
     segments: list[LineString] = []
     last_elem: int = 0
 
-    for elem_num, point in segmentation_points:
+    for elem_num, _ in segmentation_points:
         coords = list(free_of_duplicates.coords[last_elem:elem_num + 2])
         if len(coords) >= 2:
             segment = LineString(coords)
@@ -419,7 +417,7 @@ def segment_line(
                 segments.append(leftovers)
 
     if not segments:
-        return [free_of_duplicates],[]
+        return [free_of_duplicates], []
 
     return segments, segmentation_points
 

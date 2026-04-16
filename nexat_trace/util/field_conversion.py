@@ -14,7 +14,7 @@ from shapely import (
     oriented_envelope,
     unary_union,
 )
-from shapely.ops import linemerge, substring, nearest_points
+from shapely.ops import linemerge, nearest_points, substring
 
 from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
 from nexat_trace.shared.config import RoutePlanningConfig
@@ -75,10 +75,7 @@ def get_secondary_positions(
 
     multi_ab_lines_unextended = MultiLineString(cut_ab_lines)
 
-    for j, line in enumerate(cut_ab_lines):
-        print(f"Processing line {j+1}/{len(cut_ab_lines)} for secondary positions")
-        if j == 58:
-            print("Debug breakpoint")
+    for line in cut_ab_lines:
         # Check front of line for collisions
         forward_line = LineString(line)
         forward_end = Point(line.coords[-1])
@@ -295,7 +292,7 @@ def connect_rings(
 def simplify_ab_lines(
         old_ab_lines: List[LineString],
         headlands: List[LinearRing],
-        route_params: RoutePlanningConfig) -> Tuple[List[LineString], bool]:
+        route_params: RoutePlanningConfig) -> List[LineString]:
     """
     Removes any vertices in the ab lines accept for the first and last one.
 
@@ -309,7 +306,7 @@ def simplify_ab_lines(
     for ring in headlands:
         max_extension_length += ring.length
 
-    for i in range(len(old_ab_lines)-1):
+    for i in range(len(old_ab_lines) - 1):
         line_1 = old_ab_lines[i]
 
         if line_1.length < route_params.min_ab_line_length:
@@ -320,7 +317,7 @@ def simplify_ab_lines(
 
         xl = gt.extend_line(line_1, max_extension_length)
 
-        xl_intersections = [] 
+        xl_intersections = []
         for ring in headlands:
             intersection = xl.intersection(ring)
             if isinstance(intersection, MultiPoint):
@@ -329,9 +326,9 @@ def simplify_ab_lines(
                 xl_intersections.append(intersection)
                 if route_params.debug_prints:
                     print("Only one intersection with headland for line, might return wrong results")
-        
+
         # Trim xl to the segment between the two closest intersections
-        # This moves the headland intersection check to here and should make it more reliable      
+        # This moves the headland intersection check to here and should make it more reliable
         if len(xl_intersections) >= 2:
             centroid = line_1.centroid
             centroid_proj = xl.project(centroid)
@@ -344,11 +341,10 @@ def simplify_ab_lines(
                 closest_after = min(after, key=lambda p: xl.project(p))
                 xl_to_headland = substring(xl, xl.project(closest_before), xl.project(closest_after))
 
-
         best_replacement = None
         best_dist = float('inf')
 
-        for ii in range(i+1, len(old_ab_lines)):
+        for ii in range(i + 1, len(old_ab_lines)):
             line_2 = old_ab_lines[ii]
 
             if line_1.equals(line_2):
@@ -359,7 +355,7 @@ def simplify_ab_lines(
             # Find closest point on 2nd line and orient coordinates accordingly
             start = Point(line_2.coords[0])
             end = Point(line_2.coords[-1])
-            if line_1.distance(start) < line_1.distance(end):  # for kinked ab lines this could be dependent on machine precision? Since lines could be parallel here
+            if line_1.distance(start) < line_1.distance(end):
                 target = start
                 coords = list(line_2.coords)
             else:
@@ -376,18 +372,16 @@ def simplify_ab_lines(
                 coords = list(line_1.coords) + coords
             j = 1
             while j < len(coords):
-                if Point(coords[j]).distance(Point(coords[j-1]))< 0.01:
+                if Point(coords[j]).distance(Point(coords[j - 1])) < 0.01:
                     coords.pop(j)
-                else:  
+                else:
                     j += 1
             test_line = LineString(coords)
 
             # this check should still be insufficient for some cases
             # but might still be needed for small headland bulges
-            is_candidate = True
             for ring in headlands:
                 if test_line.intersects(ring):
-                    is_candidate = False
                     break
 
             distance = line_1.distance(target)
@@ -410,34 +404,6 @@ def simplify_ab_lines(
         except ValueError:
             continue
 
-    #debug print ab lines to geojson for visual debugging
-    if route_params.debug_prints:
-        import json
-        import os
-        from shapely.geometry import mapping
-        abline_features = []
-        if isinstance(removed_ab_lines, MultiLineString):
-            lines = list(removed_ab_lines.geoms)
-        elif isinstance(removed_ab_lines, LineString):
-            lines = [removed_ab_lines]
-        else:
-            lines = list(removed_ab_lines.geoms) if hasattr(removed_ab_lines, 'geoms') else removed_ab_lines
-
-        for k, line in enumerate(lines):
-            abline_features.append({
-                "type": "Feature",
-                "properties": {"line_index": k},
-                "geometry": mapping(line)
-            })
-        ablines_geojson = {
-            "type": "FeatureCollection",
-            "features": abline_features
-        }
-        os.makedirs("/tmp/debug", exist_ok=True)
-        with open("/tmp/debug/removed_ablines_debug.geojson", "w") as f:
-            json.dump(ablines_geojson, f, indent=2)
-    # end debug print
-
     problematic_replacements = []
     # look for overlapping replacements and only take one covering both
     i = 0
@@ -450,7 +416,8 @@ def simplify_ab_lines(
             if replacement == other_replacement:
                 replacements.pop(ii)
             elif replacement.dwithin(other_replacement, 1.0):
-                temp_replacement = linemerge(unary_union([replacement, other_replacement]))  # this fails on lines that arent sharing an endpoint
+                # The following line fails on lines that arent sharing an endpoint
+                temp_replacement = linemerge(unary_union([replacement, other_replacement]))
                 if isinstance(temp_replacement, MultiLineString):
                     problematic_replacements.append(replacement)
                     problematic_replacements.append(other_replacement)
@@ -483,36 +450,6 @@ def simplify_ab_lines(
                 temp_replacement.append(line.coords)
             replacement = LineString([coord for line in temp_replacement for coord in line])
         new_ab_lines.append(replacement)
-
-
-    #debug print ab lines to geojson for visual debugging
-    if route_params.debug_prints:
-        import json
-        import os
-        from shapely.geometry import mapping
-        abline_features = []
-        if isinstance(problematic_replacements, MultiLineString):
-            lines = list(problematic_replacements.geoms)
-        elif isinstance(problematic_replacements, LineString):
-            lines = [problematic_replacements]
-        else:
-            lines = list(problematic_replacements.geoms) if hasattr(problematic_replacements, 'geoms') else problematic_replacements
-
-        for k, line in enumerate(lines):
-            abline_features.append({
-                "type": "Feature",
-                "properties": {"line_index": k},
-                "geometry": mapping(line)
-            })
-        ablines_geojson = {
-            "type": "FeatureCollection",
-            "features": abline_features
-        }
-        os.makedirs("/tmp/debug", exist_ok=True)
-        with open("/tmp/debug/problematic_replacements_debug.geojson", "w") as f:
-            json.dump(ablines_geojson, f, indent=2)
-    # end debug print
-
 
     # discard ab lines if on headland
     multi_headland = MultiLineString(headlands)
@@ -819,47 +756,19 @@ def working_corridor_of_ab_line(
         return None
 
 
-def get_corridor_line(
-        ab_line: LineString,
-        working_width: float,
-        inner_border: LinearRing,
-        turning_headland: LinearRing,
-        ) -> LineString:
-    """
-    Returns the working corridor line of an ab line within an inner border.
-    """
-
-    if ab_line is None:
-        return None
-
-    corridor_poly = working_corridor_of_ab_line(
-        ab_line,
-        working_width,
-        Polygon(inner_border),
-        turning_headland,
-        []
-    )
-
-    if corridor_poly is None:
-        return ab_line
-    corridor_line = gt.extend_line_in_bounds(
-        ab_line,
-        corridor_poly
-    )
-    corridor_line = corridor_line.intersection(corridor_poly)
-    if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
-        return corridor_line
-    return ab_line
-
-# still needs some thought, if I want to return to that later. 
+# still needs some thought, if I want to return to that later.
 def get_corridor_line(
         ab_line: LineString,
         working_width: float,
         turning_headland: LinearRing,
         ) -> LineString:
+    """Returns the working corridor line of an ab line within a turning headland.
 
+    Calculates the working corridor line. This respects the working width and the turning headland geometry.
+    """
     headland_poly = Polygon(turning_headland)
-    half_width = working_width / 2.0
+    min_width = 0.0001
+    half_width = working_width / 2.0 - min_width
 
     # Extend AB line to the turning headland
     extended = gt.extend_line_in_bounds(ab_line, headland_poly)
@@ -868,23 +777,26 @@ def get_corridor_line(
     left_offset = extended.offset_curve(half_width)
     right_offset = extended.offset_curve(-half_width)
 
-    left_clipped = left_offset.intersection(headland_poly)
-    right_clipped = right_offset.intersection(headland_poly)
+    # need to improve the logic for area worked by headland paths --> this could be a problem for fertilization 28m in particular
+    worked_poly = headland_poly.buffer(-1 * working_width / 2.0, cap_style=2, join_style=2)
+    left_clipped = left_offset.intersection(worked_poly)
+    right_clipped = right_offset.intersection(worked_poly)
 
+    # make sure we have LineStrings after clipping, if not fallback to original line
+    if isinstance(left_clipped, MultiLineString):
+        left_clipped = left_clipped.geoms[0]
+    if isinstance(right_clipped, MultiLineString):
+        right_clipped = right_clipped.geoms[0]
     if not isinstance(left_clipped, LineString) or not isinstance(right_clipped, LineString):
         return extended  # fallback
 
-    # Project the clipped offset endpoints onto the extended center line
-    # to find where the full working width still fits
-    left_start_proj = extended.project(Point(left_clipped.coords[0]))
-    left_end_proj = extended.project(Point(left_clipped.coords[-1]))
-    right_start_proj = extended.project(Point(right_clipped.coords[0]))
-    right_end_proj = extended.project(Point(right_clipped.coords[-1]))
+    left_start = extended.project(left_clipped.boundary.geoms[0], normalized=True)
+    left_end = extended.project(left_clipped.boundary.geoms[-1], normalized=True)
+    right_start = extended.project(right_clipped.boundary.geoms[0], normalized=True)
+    right_end = extended.project(right_clipped.boundary.geoms[-1], normalized=True)
 
-    # The valid range is where BOTH offsets exist
-    valid_start = max(min(left_start_proj, left_end_proj), min(right_start_proj, right_end_proj))
-    valid_end = min(max(left_start_proj, left_end_proj), max(right_start_proj, right_end_proj))
-
+    valid_start = min(left_start, right_start)
+    valid_end = max(left_end, right_end)
     if valid_end <= valid_start:
         return ab_line  # fallback
 

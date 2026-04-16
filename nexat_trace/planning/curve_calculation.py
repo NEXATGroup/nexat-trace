@@ -588,8 +588,8 @@ def search_curve_to_headland(
         p1, p2 = nearest_points(working_corridor, headland_segment)
         path = [p1, p2]
         return Curve(path, CurveType.U_TURN, False)
-    
-    s_d =  0.011
+
+    s_d = 0.011
     start_dist = max(0, min(s_d, path.length - s_d))
     end_dist = path.length - s_d
     path = gt.substring(path, start_dist, end_dist)
