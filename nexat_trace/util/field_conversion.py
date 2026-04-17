@@ -761,6 +761,7 @@ def get_corridor_line(
         ab_line: LineString,
         working_width: float,
         turning_headland: LinearRing,
+        inner_border: LinearRing
         ) -> LineString:
     """Returns the working corridor line of an ab line within a turning headland.
 
@@ -778,9 +779,19 @@ def get_corridor_line(
     right_offset = extended.offset_curve(-half_width)
 
     # need to improve the logic for area worked by headland paths --> this could be a problem for fertilization 28m in particular
-    worked_poly = headland_poly.buffer(-1 * working_width / 2.0, cap_style=2, join_style=2)
-    left_clipped = left_offset.intersection(worked_poly)
-    right_clipped = right_offset.intersection(worked_poly)
+    # unworked_worked_poly = headland_poly.buffer(-1 * working_width / 2.0, cap_style=2, join_style=2)
+    inner_border_poly = Polygon(inner_border)
+    left_clipped = left_offset.intersection(inner_border_poly)
+    right_clipped = right_offset.intersection(inner_border_poly)
+
+    def fallback_line(offset_line: LineString) -> LineString:
+        p1, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[0])
+        p2, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[-1])
+        return LineString([p1, p2])
+    if left_clipped is None or left_clipped.is_empty:
+        left_clipped = fallback_line(left_offset)
+    if right_clipped is None or right_clipped.is_empty:
+        right_clipped = fallback_line(right_offset)
 
     # make sure we have LineStrings after clipping, if not fallback to original line
     if isinstance(left_clipped, MultiLineString):
@@ -788,12 +799,17 @@ def get_corridor_line(
     if isinstance(right_clipped, MultiLineString):
         right_clipped = right_clipped.geoms[0]
     if not isinstance(left_clipped, LineString) or not isinstance(right_clipped, LineString):
+        print("Clipped offsets are not LineStrings, returning extended AB line")
         return extended  # fallback
+    # at edges on might be outside the inner border
+    left_clipped = left_clipped if not left_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
+    right_clipped = right_clipped if not right_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
 
-    left_start = extended.project(left_clipped.boundary.geoms[0], normalized=True)
-    left_end = extended.project(left_clipped.boundary.geoms[-1], normalized=True)
-    right_start = extended.project(right_clipped.boundary.geoms[0], normalized=True)
-    right_end = extended.project(right_clipped.boundary.geoms[-1], normalized=True)
+    left_start = extended.project(left_clipped.boundary.geoms[0])
+    left_end = extended.project(left_clipped.boundary.geoms[-1])
+
+    right_start = extended.project(right_clipped.boundary.geoms[0])
+    right_end = extended.project(right_clipped.boundary.geoms[-1])
 
     valid_start = min(left_start, right_start)
     valid_end = max(left_end, right_end)

@@ -5,7 +5,7 @@ from typing import Iterable, Iterator, List, Tuple, TypeVar
 import dubins
 import numpy as np
 from numpy import typing as npt
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, Polygon, remove_repeated_points, MultiPolygon
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, remove_repeated_points
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, substring, unary_union
 
@@ -205,8 +205,11 @@ def get_substring_on_linearring(ring, start_point, stop_point) -> LineString:
 
 def erode_linearring(ring: LinearRing, radius) -> LinearRing:
     """
+    Returns a drivable version of the <ring> for machines which turning radius is <radius>.
+
     Erodes the given linearring by buffering outwards once, inwards twice and outwards once again
     to smooth all vertices in the geometry to the given radius.
+
     """
     buffer = Polygon(
         ring.buffer(
@@ -227,13 +230,13 @@ def erode_linearring(ring: LinearRing, radius) -> LinearRing:
     if not isinstance(buffer, Polygon):
         raise ValueError("Failed to smooth headland ring in one piece")
 
-    newRing = buffer.buffer(
+    new_ring = buffer.buffer(
         1 * radius,
         join_style="round",
         resolution=45
     ).exterior
 
-    return newRing
+    return new_ring
 
 
 T = TypeVar('T')

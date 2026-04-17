@@ -569,6 +569,7 @@ def search_curve_to_headland(
     working_corridor = get_corridor_line(
         ab_line,
         route_params.working_width,
+        headland_ring,
         inner_field_border
     )
 
@@ -602,7 +603,7 @@ def search_curve_to_headland(
         curve_end_projection = working_corridor.length - curve_end_projection
 
     # is the end of the path within a given range of the start of the working corridor?
-    corridor_error_detected: bool = not metrics or metrics.working_corridor_error > 0
+    corridor_error_detected: bool = True
     if curve_end_projection > route_params.corridor_threshold and corridor_error_detected:
         # should this working corridor be driven?
         strategy = route_params.corridor_strategy
@@ -612,7 +613,7 @@ def search_curve_to_headland(
                 path = insert_hook_stops_to_headland(
                     path,
                     working_corridor,
-                    field_border,
+                    headland_ring,
                     route_params
                 )
                 curve_type = CurveType.HOOK
@@ -652,6 +653,7 @@ def search_curve_to_ab(
     working_corridor = get_corridor_line(
         ab_line,
         route_params.working_width,
+        headland_ring,
         inner_field_border
     )
 
@@ -695,7 +697,7 @@ def search_curve_to_ab(
                 path = insert_hook_stops_to_ab(
                     path,
                     working_corridor,
-                    field_border,
+                    headland_ring,
                     route_params
                 )
                 curve_type = CurveType.HOOK
@@ -1027,7 +1029,7 @@ def trace_curve(
 def insert_hook_stops_to_ab(
         curve: LineString,
         working_corridor,
-        field_border,
+        turning_headland,
         route_params: RoutePlanningConfig):
     """
     Inserts the needed points in a curve from a headland segment onto an ab line working corridor for a hook curve.
@@ -1052,17 +1054,17 @@ def insert_hook_stops_to_ab(
                 curve_end
             ) + route_params.direction_change_extension_distance
         )
-        extension_point = working_corridor.interpolate(working_corridor.project(extension_point))
         points.append(extension_point)
 
         if route_params.working_corridor_extension:
             working_corridor_oriented = gt.extend_line_in_bounds(
                 working_corridor_oriented,
-                field_border,
+                Polygon(turning_headland),
                 route_params.direction_change_extension_distance,
                 extend_front = False,
                 extend_back = True
             )
+        # working_corridor_oriented = working_corridor_oriented.intersection(Polygon(turning_headland))
 
         insert_point = Point(working_corridor_oriented.coords[0])
         points.append(insert_point)
@@ -1074,7 +1076,7 @@ def insert_hook_stops_to_ab(
 def insert_hook_stops_to_headland(
         curve: LineString,
         working_corridor,
-        field_border,
+        turning_headland,
         route_params: RoutePlanningConfig):
     """
     Inserts the needed points in a curve from an ab line working corridor onto the headland for a hook curve.
@@ -1099,18 +1101,17 @@ def insert_hook_stops_to_headland(
                 curve_start
             )
         )
-        backup_point = working_corridor_oriented.interpolate(working_corridor_oriented.project(backup_point))
         points.insert(0, backup_point)
 
         if route_params.working_corridor_extension:
             working_corridor_oriented = gt.extend_line_in_bounds(
                 working_corridor_oriented,
-                field_border,
+                Polygon(turning_headland),
                 route_params.direction_change_extension_distance,
                 extend_front = True,
                 extend_back = False
             )
-
+        # working_corridor_oriented = working_corridor_oriented.intersection(Polygon(turning_headland))
         corridor_end = Point(working_corridor_oriented.coords[-1])
         points.insert(0, corridor_end)
         return LineString(points)
