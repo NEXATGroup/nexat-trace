@@ -1,3 +1,4 @@
+from math import pi
 from typing import List, Tuple
 
 from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
@@ -16,6 +17,7 @@ from nexat_trace.shared.weights import Weights
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
+from nexat_trace.util.geom_tools import angle_between_lines
 
 
 class TrackGraph:
@@ -123,6 +125,10 @@ class TrackGraph:
 
             route = self.get_route_nodes_from_path(path)
             headland_index = get_headland_index_of_path_on_track_system(path, self.track_system)
+
+            if route_params.debug_prints:
+                print(f"Found headland index {headland_index} for path")
+                print(f"Nodes of the last path: {[node.index for node in route]}")
 
             if last_known_path_headland_index is not None and headland_index != headland_index:
                 if route_params.debug_prints:
@@ -743,8 +749,23 @@ class TrackGraph:
                 if insert:
 
                     paths.update({new_path.last_pos(): new_path})
-                    i = 0
 
+                    ids = new_path.indices()
+                    if len(ids) >= 3:
+                        is_ring_hop = (self.get_node(ids[-3]).ring_index != self.get_node(ids[-2]).ring_index
+                                       or self.get_node(ids[-2]).ring_index != self.get_node(ids[-1]).ring_index)
+                        if is_ring_hop:
+                            line1 = LineString([self.get_node(ids[-3]).position, self.get_node(ids[-2]).position])
+                            line2 = LineString([self.get_node(ids[-2]).position, self.get_node(ids[-1]).position])
+                            if abs(angle_between_lines(line1, line2)) > pi / 2:
+                                if self.route_params.debug_prints:
+                                    print(
+                                        f"skipped neighbor {to_index} for node {from_index} because of sharp angle in TrackGraph"
+                                        + " search"
+                                    )
+                                continue
+
+                    i = 0
                     while i < len(agenda) and new_path.estimated_cost > agenda[i].estimated_cost:
                         i += 1
 
@@ -794,7 +815,8 @@ class TrackGraph:
             if self.route_params.debug_prints:
                 print(
                     "Encountered headland hop while searching for nodes included in given path.\n"
-                    + "Resulting list of nodes may be incomplete."
+                    + "Resulting list of nodes may be incomplete or wrong."
+                    + f" at Primary indexes: {primary1.index}, {primary2.index}"
                 )
 
             current_node = first_intersect_secondary
@@ -806,7 +828,15 @@ class TrackGraph:
                 nearest_node = self.secondary_nodes[index]
                 if nearest_node == current_node:
                     continue
-
+                elif (nearest_node.get_metrics(current_node.index) is None
+                      and len(nodes) > 1
+                      and nearest_node.get_metrics(nodes[-2].index) is not None):
+                    # node is not connected on the graph to the current node
+                    # we should keep the one closest to the path not just any that is at any point the closest to the path
+                    if nearest_node.position.distance(path_segment) < current_node.position.distance(path_segment):
+                        nodes.pop()
+                    else:
+                        continue
                 if nearest_node == second_intersect_secondary:
                     return nodes
 
@@ -926,8 +956,12 @@ class TrackGraph:
 
         if first_point_index > 0:
             did_cut_path_to_first_node = True
+            if self.route_params.debug_prints:
+                print(f"Cutting path to first primary node, cut off {first_point_index} points")
 
         cut_path = LineString(cut_path_points_coords[first_point_index::])
+        if self.route_params.debug_prints:
+            print(f"Cut path to first node: {did_cut_path_to_first_node}, cut off {first_point_index} points")
 
         start_node = self.primary_nodes[self.primary_node_tree.nearest(Point(cut_path.coords[0]))]
         start_line = ab_line_set[0]
@@ -961,16 +995,19 @@ class TrackGraph:
             if node1.primary_neighbor != node2:
                 node2 = node1.primary_neighbor
                 skip_to_line = min(
-                    ab_line_set,
+                    ab_line_set[i:],
                     key=lambda set_line: set_line.distance(node2.position)
                 )
-                i = ab_line_set.index(skip_to_line)
+                # should fix infinite loop but may result in broken paths
+                skip_index = ab_line_set.index(skip_to_line)
+                ab_line_set[i], ab_line_set[skip_index] = ab_line_set[skip_index], ab_line_set[i]
 
                 if self.route_params.debug_prints:
                     print(
                         "Consecutive primary nodes were not part of the same AB line in the loaded graph - "
                         + "Skipping to line of primary neighbor"
                     )
+                    print(f"Swapped from ab_ index {i} to {skip_index} while searching for nodes on path")
 
             nodes.append(node1)
             nodes.append(node2)
@@ -980,10 +1017,15 @@ class TrackGraph:
 
                 next_line = ab_line_set[i + 1]
                 next_primary = self.primary_nodes[self.primary_node_tree.nearest(Point(next_line.coords[0]))]
-                while next_primary == node2:
+                while next_primary == node2 and i < len(ab_line_set) - 2:
                     i += 1
                     next_line = ab_line_set[i + 1]
                     next_primary = self.primary_nodes[self.primary_node_tree.nearest(Point(next_line.coords[0]))]
+                    if next_primary == node2 and i == len(ab_line_set) - 2 and self.route_params.debug_prints:
+                        print(
+                            "Could not find next primary node on path after current ab line - "
+                            + "Skipping search for secondary nodes to next ab line"
+                        )
 
                 nodes.extend(self._get_secondaries_between_primaries_on_path(node2, next_primary, cut_path))
 

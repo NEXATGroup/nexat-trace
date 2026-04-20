@@ -3,7 +3,7 @@ import time
 from typing import List, Tuple
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-from shapely import LinearRing, LineString, MultiPolygon, Point
+from shapely import LinearRing, LineString, MultiLineString, MultiPolygon, Point
 
 from nexat_trace.planning.net_graph.net_graph import NetGraph
 from nexat_trace.planning.route import Route
@@ -81,11 +81,12 @@ def net_graph_from_track_system(
         n2 = PrimaryTrackGraphNode(Point(ab_line.coords[-1]), None)
         n2.set_ab_line(ab_line)
         primary_nodes.append(n2)
-
     ab_lines = []
     for i in range(0, len(primary_nodes) - 1, 2):
         ls = primary_nodes[i].get_ab_line()
         ab_lines.append(ls)
+
+    track_system.ab_lines = MultiLineString(ab_lines)
 
     if route_params.debug_plot_field:
         from nexat_trace.util import plot_geometry as pg
