@@ -764,7 +764,7 @@ def get_corridor_line(
         ab_line: LineString,
         working_width: float,
         turning_headland: LinearRing,
-        inner_border: LinearRing
+        inner_border: LinearRing | Polygon
         ) -> LineString:
     """Returns the working corridor line of an ab line within a turning headland.
 
@@ -812,6 +812,7 @@ def get_corridor_line(
     # unworked_worked_poly = headland_poly.buffer(-1 * working_width / 2.0, cap_style=2, join_style=2)
     left_clipped = left_offset.intersection(inner_border_poly)
     right_clipped = right_offset.intersection(inner_border_poly)
+    middle_clipped = extended.intersection(inner_border_poly)
 
     def fallback_line(offset_line: LineString) -> LineString:
         p1, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[0])
@@ -823,7 +824,9 @@ def get_corridor_line(
     if right_clipped is None or right_clipped.is_empty:
         right_clipped = fallback_line(right_offset)
         print("Right clipped is empty, using fallback line")
-
+    if middle_clipped is None or middle_clipped.is_empty:
+        middle_clipped = fallback_line(extended)
+        print("Middle clipped is empty, using fallback line")
     # make sure we have LineStrings after clipping, if not fallback to original line
     if isinstance(left_clipped, MultiLineString):
         for line in left_clipped.geoms:
@@ -834,6 +837,11 @@ def get_corridor_line(
         for line in right_clipped.geoms:
             if line.length > 0.1:
                 right_clipped = line
+                break
+    if isinstance(middle_clipped, MultiLineString):
+        for line in middle_clipped.geoms:
+            if line.length > 0.1:
+                middle_clipped = line
                 break
     # if not isinstance(left_clipped, LineString) or not isinstance(right_clipped, LineString):
     #     print("Clipped offsets are not LineStrings, returning AB line")
@@ -848,8 +856,11 @@ def get_corridor_line(
     right_start = extended.project(right_clipped.boundary.geoms[0])
     right_end = extended.project(right_clipped.boundary.geoms[-1])
 
-    valid_start = min(left_start, right_start)
-    valid_end = max(left_end, right_end)
+    midlle_start = extended.project(middle_clipped.boundary.geoms[0])
+    middle_end = extended.project(middle_clipped.boundary.geoms[-1])
+
+    valid_start = min(left_start, right_start, midlle_start)
+    valid_end = max(left_end, right_end, middle_end)
     if valid_end <= valid_start:
         valid_start, valid_end = valid_end, valid_start
         # return ab_line  # fallback
@@ -857,4 +868,4 @@ def get_corridor_line(
     corridor_line = substring(extended, valid_start, valid_end)
     if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
         return remove_repeated_points(corridor_line, 0.01)
-    return remove_repeated_points(ab_line, 0.01)
+    return None  # remove_repeated_points(ab_line, 0.01)

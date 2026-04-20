@@ -433,7 +433,7 @@ class Route:
         """Checks if path is only segmented at direction changes."""
 
         for i in range(0, len(segments) - 1):
-            is_same_start_stop = segments[i][-1] == segments[i + 1][0]
+            is_same_start_stop = segments[i][-1].distance(segments[i + 1][0]) < 1e-9
             is_direction_change = abs(
                 gt.angle_between_lines(LineString(segments[i][-2:]), LineString(segments[i + 1][:2]))
                 ) > 0.9 * pi
