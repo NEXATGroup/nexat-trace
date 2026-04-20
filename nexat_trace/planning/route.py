@@ -9,8 +9,7 @@ from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.planning.track_graph.primary_track_graph_node import PrimaryTrackGraphNode
 from nexat_trace.planning.track_graph.track_graph_node import TrackGraphNode
 from nexat_trace.shared import progress
-from nexat_trace.shared.exceptions import RoutePlanningError
-from nexat_trace.shared.config import CurveType, RoutePlanningConfig, CorridorStrategy
+from nexat_trace.shared.config import CorridorStrategy, CurveType, RoutePlanningConfig
 from nexat_trace.shared.curve import Curve
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
@@ -384,7 +383,7 @@ class Route:
             self.planning_messages.append(PlanningMsg.UNEXPECTED_SEGMENTATION)
             if self._route_params.debug_prints:
                 print("Got a segmented path, when we shouldn't")
-                
+
         if len(self._segmented_path) > 1:
             self.check_segment_direction_change(self._segmented_path)
 
@@ -429,14 +428,14 @@ class Route:
         if self._covered_area is None:
             self._calculate_area()
         return self._covered_area
-    
+
     def check_segment_direction_change(self, segments: List[List[Point]]):
         """Checks if path is only segmented at direction changes."""
 
         for i in range(0, len(segments) - 1):
-            is_same_start_stop = segments[i][-1] == segments[i+1][0]
+            is_same_start_stop = segments[i][-1] == segments[i + 1][0]
             is_direction_change = abs(
-                gt.angle_between_lines(LineString(segments[i][-2:]), LineString(segments[i+1][:2]))
+                gt.angle_between_lines(LineString(segments[i][-2:]), LineString(segments[i + 1][:2]))
                 ) > 0.9 * pi
             if not is_same_start_stop or not is_direction_change:
                 self.planning_messages.append(PlanningMsg.NO_DIRECTION_CHANGE_AT_SEGMENTATION)
@@ -479,5 +478,3 @@ def _calculate_drive_time(
             duration += time_on_direction_change
 
     return duration
-
-

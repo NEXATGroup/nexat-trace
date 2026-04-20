@@ -2,7 +2,7 @@ import math
 from math import pi
 from typing import Dict, List
 
-from shapely import LinearRing, LineString, MultiPoint, Point, Polygon, STRtree
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, Polygon, STRtree
 from shapely.ops import nearest_points
 
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
@@ -603,7 +603,7 @@ def search_curve_to_headland(
         curve_end_projection = working_corridor.length - curve_end_projection
 
     # is the end of the path within a given range of the start of the working corridor?
-    corridor_error_detected: bool = True
+    corridor_error_detected: bool = True  # TODO revert before merge
     if curve_end_projection > route_params.corridor_threshold and corridor_error_detected:
         # should this working corridor be driven?
         strategy = route_params.corridor_strategy
@@ -1057,14 +1057,29 @@ def insert_hook_stops_to_ab(
         points.append(extension_point)
 
         if route_params.working_corridor_extension:
-            working_corridor_oriented = gt.extend_line_in_bounds(
-                working_corridor_oriented,
-                Polygon(turning_headland),
-                route_params.direction_change_extension_distance,
-                extend_front = False,
-                extend_back = True
-            )
-        # working_corridor_oriented = working_corridor_oriented.intersection(Polygon(turning_headland))
+            if (
+                working_corridor is None
+                or not isinstance(working_corridor_oriented, LineString)
+                or working_corridor_oriented.length < 0.01
+            ):
+                if route_params.debug_prints:
+                    print("Working corridor is very short, extension failed")
+                print("Working corridor is very short, extension failed")
+                return curve
+            else:
+                working_corridor_oriented = gt.extend_line_in_bounds(
+                    working_corridor_oriented,
+                    Polygon(turning_headland),
+                    route_params.direction_change_extension_distance,
+                    extend_front = False,
+                    extend_back = True
+                )
+        working_corridor_oriented = working_corridor_oriented.intersection(Polygon(turning_headland))
+        if isinstance(working_corridor_oriented, MultiLineString):
+            for line in working_corridor_oriented.geoms:
+                if line.length > 0.1:
+                    working_corridor_oriented = line
+                    break
 
         insert_point = Point(working_corridor_oriented.coords[0])
         points.append(insert_point)
@@ -1104,14 +1119,29 @@ def insert_hook_stops_to_headland(
         points.insert(0, backup_point)
 
         if route_params.working_corridor_extension:
-            working_corridor_oriented = gt.extend_line_in_bounds(
-                working_corridor_oriented,
-                Polygon(turning_headland),
-                route_params.direction_change_extension_distance,
-                extend_front = True,
-                extend_back = False
-            )
-        # working_corridor_oriented = working_corridor_oriented.intersection(Polygon(turning_headland))
+            if (
+                working_corridor is None
+                or not isinstance(working_corridor_oriented, LineString)
+                or working_corridor_oriented.length < 0.01
+            ):
+                if route_params.debug_prints:
+                    print("Working corridor is very short, extension failed")
+                print("Working corridor is very short, extension failed")
+                return curve
+            else:
+                working_corridor_oriented = gt.extend_line_in_bounds(
+                    working_corridor_oriented,
+                    Polygon(turning_headland),
+                    route_params.direction_change_extension_distance,
+                    extend_front = True,
+                    extend_back = False
+                )
+        working_corridor_oriented = working_corridor_oriented.intersection(Polygon(turning_headland))
+        if isinstance(working_corridor_oriented, MultiLineString):
+            for line in working_corridor_oriented.geoms:
+                if line.length > 0.1:
+                    working_corridor_oriented = line
+                    break
         corridor_end = Point(working_corridor_oriented.coords[-1])
         points.insert(0, corridor_end)
         return LineString(points)

@@ -15,6 +15,7 @@ from shapely import (
     unary_union,
 )
 from shapely.ops import linemerge, nearest_points, substring
+from shapely import remove_repeated_points
 
 from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
 from nexat_trace.shared.config import RoutePlanningConfig
@@ -22,6 +23,8 @@ from nexat_trace.shared.exceptions import GraphConstructionError
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
+
+from debug_visuals import Visualizer
 
 
 def get_target_headland_from_track_system(
@@ -768,19 +771,45 @@ def get_corridor_line(
     Calculates the working corridor line. This respects the working width and the turning headland geometry.
     """
     headland_poly = Polygon(turning_headland)
+    if not headland_poly.is_simple:
+        print("Warning: headland polygon is not simple")
     min_width = 0.0001
     half_width = working_width / 2.0 - min_width
+    inner_border_poly = Polygon(inner_border)
+    if not inner_border_poly.is_simple:
+        print("Warning: inner border polygon is not simple")
+
+    def get_intersection_line_savely(line: LineString, polygon: Polygon) -> LineString | None:
+        intersection = line.intersection(polygon, grid_size=0)
+        if isinstance(intersection, MultiLineString):
+            for i in range(len(intersection.geoms)):
+                # For some reason, sometimes line geometries with length of about 10^-10 are created
+                if intersection.geoms[i].length > 0.1:
+                    return intersection.geoms[i]
+        elif isinstance(intersection, LineString):
+            return intersection
+        else:
+            return None
 
     # Extend AB line to the turning headland
-    extended = gt.extend_line_in_bounds(ab_line, headland_poly)
+    # But at first filter out the case, where the turning headland is the cutout
+    try:
+        extended = get_intersection_line_savely(ab_line, headland_poly)
+        if extended is None or extended.is_empty:
+            extended = gt.extend_line(ab_line, inner_border.length)
+            extended = get_intersection_line_savely(extended, inner_border_poly)
+        else:
+            extended = gt.extend_line_in_bounds(ab_line, headland_poly)
+            extended = get_intersection_line_savely(extended, headland_poly)
 
-    # Create left/right offsets and clip to headland
-    left_offset = extended.offset_curve(half_width)
-    right_offset = extended.offset_curve(-half_width)
+        # Create left/right offsets and clip to headland
+        left_offset = extended.offset_curve(half_width)
+        right_offset = extended.offset_curve(-half_width)
+    except Exception as e:
+        raise e
 
     # need to improve the logic for area worked by headland paths --> this could be a problem for fertilization 28m in particular
     # unworked_worked_poly = headland_poly.buffer(-1 * working_width / 2.0, cap_style=2, join_style=2)
-    inner_border_poly = Polygon(inner_border)
     left_clipped = left_offset.intersection(inner_border_poly)
     right_clipped = right_offset.intersection(inner_border_poly)
 
@@ -790,20 +819,28 @@ def get_corridor_line(
         return LineString([p1, p2])
     if left_clipped is None or left_clipped.is_empty:
         left_clipped = fallback_line(left_offset)
+        print("Left clipped is empty, using fallback line")
     if right_clipped is None or right_clipped.is_empty:
         right_clipped = fallback_line(right_offset)
+        print("Right clipped is empty, using fallback line")
 
     # make sure we have LineStrings after clipping, if not fallback to original line
     if isinstance(left_clipped, MultiLineString):
-        left_clipped = left_clipped.geoms[0]
+        for line in left_clipped.geoms:
+            if line.length > 0.1:
+                left_clipped = line
+                break
     if isinstance(right_clipped, MultiLineString):
-        right_clipped = right_clipped.geoms[0]
-    if not isinstance(left_clipped, LineString) or not isinstance(right_clipped, LineString):
-        print("Clipped offsets are not LineStrings, returning extended AB line")
-        return extended  # fallback
+        for line in right_clipped.geoms:
+            if line.length > 0.1:
+                right_clipped = line
+                break
+    # if not isinstance(left_clipped, LineString) or not isinstance(right_clipped, LineString):
+    #     print("Clipped offsets are not LineStrings, returning AB line")
+    #     return ab_line  # fallback
     # at edges on might be outside the inner border
-    left_clipped = left_clipped if not left_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
-    right_clipped = right_clipped if not right_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
+    # left_clipped = left_clipped if not left_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
+    # right_clipped = right_clipped if not right_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
 
     left_start = extended.project(left_clipped.boundary.geoms[0])
     left_end = extended.project(left_clipped.boundary.geoms[-1])
@@ -814,9 +851,10 @@ def get_corridor_line(
     valid_start = min(left_start, right_start)
     valid_end = max(left_end, right_end)
     if valid_end <= valid_start:
-        return ab_line  # fallback
+        valid_start, valid_end = valid_end, valid_start
+        # return ab_line  # fallback
 
     corridor_line = substring(extended, valid_start, valid_end)
     if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
-        return corridor_line
-    return ab_line
+        return remove_repeated_points(corridor_line, 0.01)
+    return remove_repeated_points(ab_line, 0.01)
