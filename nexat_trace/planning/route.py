@@ -1,7 +1,7 @@
 from math import pi
 from typing import Dict, List
 
-from shapely import LinearRing, LineString, MultiLineString, Point
+from shapely import LinearRing, LineString, MultiLineString, Point, Polygon
 from shapely.ops import substring
 
 from nexat_trace.planning import curve_calculation
@@ -46,7 +46,7 @@ class Route:
             metrics: EdgeMetrics,
             target_headlands: List[LinearRing],
             field_border: LinearRing,
-            inner_border: LinearRing,
+            inner_border: Polygon,
             ab_lines: List[LineString],
             route_params: RoutePlanningConfig,
             is_point_navigation: bool = False,

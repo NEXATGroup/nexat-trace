@@ -23,7 +23,6 @@ from nexat_trace.shared.exceptions import GraphConstructionError
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
-
 from debug_visuals import Visualizer
 
 
@@ -565,7 +564,8 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
     offs = mh
     if sum(headland_prep) < new_ww:
         offs += new_ww - sum(headland_prep)
-
+    if sum(headland_prep) > new_ww and sum(headland_prep) % new_ww >= route_params.working_width * 0.5:
+        offs = sum(headland_prep) % new_ww
     inner_headland_rings = track_system.headlands[-1]  # TODO make this support multi part fields
     inner_headland_poly = Polygon(inner_headland_rings[0], inner_headland_rings[1:])
     inner_border = inner_headland_poly.buffer(offs * -1, resolution=20, cap_style=2, join_style=2)
@@ -776,8 +776,6 @@ def get_corridor_line(
     min_width = 0.0001
     half_width = working_width / 2.0 - min_width
     inner_border_poly = Polygon(inner_border)
-    if not inner_border_poly.is_simple:
-        print("Warning: inner border polygon is not simple")
 
     def get_intersection_line_savely(line: LineString, polygon: Polygon) -> LineString | None:
         intersection = line.intersection(polygon, grid_size=0)
@@ -788,6 +786,11 @@ def get_corridor_line(
                     return intersection.geoms[i]
         elif isinstance(intersection, LineString):
             return intersection
+        elif isinstance(intersection, GeometryCollection):
+            # I can't believe I have to do this, but intersection at hole produced this for no discernable reason
+            for geom in intersection.geoms:
+                if isinstance(geom, LineString) and geom.length > 0.1:
+                    return geom
         else:
             return None
 
@@ -796,10 +799,10 @@ def get_corridor_line(
     try:
         extended = get_intersection_line_savely(ab_line, headland_poly)
         if extended is None or extended.is_empty:
-            extended = gt.extend_line(ab_line, inner_border.length)
+            extended = gt.extend_line_in_bounds(ab_line, inner_border_poly, inner_border.length)
             extended = get_intersection_line_savely(extended, inner_border_poly)
         else:
-            extended = gt.extend_line_in_bounds(ab_line, headland_poly)
+            extended = gt.extend_line_in_bounds(ab_line, headland_poly, headland_poly.length)
             extended = get_intersection_line_savely(extended, headland_poly)
 
         # Create left/right offsets and clip to headland
@@ -856,10 +859,10 @@ def get_corridor_line(
     right_start = extended.project(right_clipped.boundary.geoms[0])
     right_end = extended.project(right_clipped.boundary.geoms[-1])
 
-    midlle_start = extended.project(middle_clipped.boundary.geoms[0])
+    middle_start = extended.project(middle_clipped.boundary.geoms[0])
     middle_end = extended.project(middle_clipped.boundary.geoms[-1])
 
-    valid_start = min(left_start, right_start, midlle_start)
+    valid_start = min(left_start, right_start, middle_start)
     valid_end = max(left_end, right_end, middle_end)
     if valid_end <= valid_start:
         valid_start, valid_end = valid_end, valid_start
