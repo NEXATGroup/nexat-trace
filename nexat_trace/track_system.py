@@ -2,7 +2,7 @@ import hashlib
 import json
 from typing import List
 
-from shapely import LinearRing, LineString, MultiLineString, Polygon
+from shapely import LinearRing, LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.geometry import mapping, shape
 from shapely.geometry.base import BaseGeometry
 

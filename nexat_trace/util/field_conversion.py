@@ -560,19 +560,24 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
         if i == 0:
             head_width /= 2
         headland_prep.append(head_width)
-    headland_prep.append(mh)
-    offs = mh
+    offs = 0
     if sum(headland_prep) < new_ww:
         offs += new_ww - sum(headland_prep)
-    if sum(headland_prep) > new_ww and sum(headland_prep) % new_ww >= route_params.working_width * 0.5:
-        offs = sum(headland_prep) % new_ww
-    inner_headland_rings = track_system.headlands[-1]  # TODO make this support multi part fields
-    inner_headland_poly = Polygon(inner_headland_rings[0], inner_headland_rings[1:])
-    inner_border = inner_headland_poly.buffer(offs * -1, resolution=20, cap_style=2, join_style=2)
+
+    rest = (sum(headland_prep)) % new_ww
+    if rest > 0 and sum(headland_prep) > (new_ww):
+        snip = headland_prep[-1]
+        temp = snip + (new_ww - rest)
+        if temp > new_ww / 2:
+            offs = new_ww / 2
+        else:
+            offs = temp
+    outer_headland_rings = track_system.headlands[0]  # TODO make this support multi part fields
+    outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
+    inner_border = outer_headland_poly.buffer((sum(headland_prep[1:]) + offs) * -1, resolution=20, cap_style=2, join_style=2)
 
     if isinstance(inner_border, Polygon):
         inner_border = MultiPolygon([inner_border])
-
     return inner_border
 
 
@@ -761,11 +766,12 @@ def working_corridor_of_ab_line(
 
 # still needs some thought, if I want to return to that later.
 def get_corridor_line(
-        ab_line: LineString,
-        working_width: float,
-        turning_headland: LinearRing,
-        inner_border: LinearRing | Polygon
-        ) -> LineString:
+    ab_line: LineString,
+    working_width: float,
+    turning_headland: LinearRing,
+    inner_border: LinearRing | Polygon,
+    implement_working_offset: float = 0.0
+) -> LineString:
     """Returns the working corridor line of an ab line within a turning headland.
 
     Calculates the working corridor line. This respects the working width and the turning headland geometry.
@@ -821,6 +827,7 @@ def get_corridor_line(
         p1, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[0])
         p2, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[-1])
         return LineString([p1, p2])
+
     if left_clipped is None or left_clipped.is_empty:
         left_clipped = fallback_line(left_offset)
         print("Left clipped is empty, using fallback line")
@@ -830,6 +837,7 @@ def get_corridor_line(
     if middle_clipped is None or middle_clipped.is_empty:
         middle_clipped = fallback_line(extended)
         print("Middle clipped is empty, using fallback line")
+
     # make sure we have LineStrings after clipping, if not fallback to original line
     if isinstance(left_clipped, MultiLineString):
         for line in left_clipped.geoms:
@@ -846,10 +854,14 @@ def get_corridor_line(
             if line.length > 0.1:
                 middle_clipped = line
                 break
+
+    left_clipped = gt.extend_line(left_clipped, implement_working_offset, extend_back=True)
+    right_clipped = gt.extend_line(right_clipped, implement_working_offset, extend_back=True)
+    middle_clipped = gt.extend_line(middle_clipped, implement_working_offset, extend_back=True)
     # if not isinstance(left_clipped, LineString) or not isinstance(right_clipped, LineString):
     #     print("Clipped offsets are not LineStrings, returning AB line")
     #     return ab_line  # fallback
-    # at edges on might be outside the inner border
+    # at edges left or right might be outside the inner border
     # left_clipped = left_clipped if not left_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
     # right_clipped = right_clipped if not right_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
 

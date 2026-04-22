@@ -160,7 +160,9 @@ class PrimaryTrackGraphNode(TrackGraphNode):
         Checks working corridor risk for traversal to target node.
         """
         # get working corridor geometry
-        corridor_line = get_corridor_line(ab_line, route_params.working_width, headland_ring, inner_border)
+        corridor_line = get_corridor_line(
+            ab_line, route_params.working_width, headland_ring, inner_border, route_params.implement_working_offset
+        )
 
         # find turn curve radius middle point
         buffer_radius = route_params.vehicle_turning_radius - 0.01

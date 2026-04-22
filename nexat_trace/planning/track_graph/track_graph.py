@@ -248,6 +248,8 @@ class TrackGraph:
         if skip_ab_lines == 0:
             return self.primary_nodes
         nodes: List[PrimaryTrackGraphNode] = []
+        if start is not None and not self.inner_border.contains(start):
+            start = None
 
         if start is None:
             # build up grid of linestrings that mark the lines that need to be skipped
@@ -353,7 +355,7 @@ class TrackGraph:
             "dwithin",
             (self.route_params._track_width / 2.0) - 0.01
         )
-        subset = [self.primary_nodes[i] for i in indexes]
+        subset = [self.primary_nodes[i] for i in indexes if self.inner_border.contains(self.primary_nodes[i].get_ab_line())]
 
         return subset
 
@@ -407,7 +409,7 @@ class TrackGraph:
             "dwithin",
             (self.route_params._track_width / 2.0) - 0.01
         )
-        subset = [self.primary_nodes[i] for i in indexes]
+        subset = [self.primary_nodes[i] for i in indexes if self.inner_border.contains(self.primary_nodes[i].get_ab_line())]
 
         return subset
 

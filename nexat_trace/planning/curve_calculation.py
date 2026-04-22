@@ -570,7 +570,8 @@ def search_curve_to_headland(
         ab_line,
         route_params.working_width,
         headland_ring,
-        inner_field_border
+        inner_field_border,
+        route_params.implement_working_offset
     )
 
     # try if simple turn fits
@@ -654,7 +655,8 @@ def search_curve_to_ab(
         ab_line,
         route_params.working_width,
         headland_ring,
-        inner_field_border
+        inner_field_border,
+        route_params.implement_working_offset
     )
 
     # try if simple turn fits
