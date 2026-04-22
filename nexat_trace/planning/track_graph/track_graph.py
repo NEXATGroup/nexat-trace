@@ -19,6 +19,8 @@ from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
 from nexat_trace.util.geom_tools import angle_between_lines
 
+from debug_visuals import Visualizer
+
 
 class TrackGraph:
     """
@@ -355,8 +357,13 @@ class TrackGraph:
             "dwithin",
             (self.route_params._track_width / 2.0) - 0.01
         )
-        subset = [self.primary_nodes[i] for i in indexes if self.inner_border.contains(self.primary_nodes[i].get_ab_line())]
-
+        subset = [
+            self.primary_nodes[i]
+            for i in indexes
+            if self.inner_border.intersects(
+                self.primary_nodes[i].get_ab_line().buffer(self.route_params.working_width, cap_style="flat", join_style="mitre")
+            )
+        ]
         return subset
 
     def _get_mask_with_offset_multi_vertex_ab_lines(
@@ -400,6 +407,29 @@ class TrackGraph:
 
             if multi_keep_lines.intersects(inner_buffer):
                 continue
+            # make sure that if the distance is smaller than min distance, it is in forward direction
+            # this check probably might need work still
+            actual_distance = multi_keep_lines.distance(line)
+            if actual_distance < min_distance:
+                nearest = min(keep_lines, key=lambda keep_line: keep_line.distance(line))
+
+                # Get nearest points on each line
+                np1, np2 = gt.nearest_points(nearest, line)
+
+                # Extract local tangent segments centered on each nearest point
+                # Using substring avoids the vertex ambiguity: if the nearest point
+                # is exactly on a vertex, the segment spans it and still has direction
+                epsilon = 0.5
+                t1 = nearest.project(np1)
+                t2 = line.project(np2)
+                seg1 = substring(nearest, max(0, t1 - epsilon), min(nearest.length, t1 + epsilon))
+                seg2 = substring(line, max(0, t2 - epsilon), min(line.length, t2 + epsilon))
+
+                if abs(gt.angle_between_lines(seg1, seg2)) < pi / 36:
+                    nearest_extend = gt.extend_line(nearest, actual_distance)
+                    nearest_extended_buffer = nearest_extend.buffer(self.route_params._track_width / 2, 8, "flat", "mitre")
+                    if not nearest_extended_buffer.intersects(line):
+                        continue
 
             keep_lines.append(line)
 
@@ -409,7 +439,13 @@ class TrackGraph:
             "dwithin",
             (self.route_params._track_width / 2.0) - 0.01
         )
-        subset = [self.primary_nodes[i] for i in indexes if self.inner_border.contains(self.primary_nodes[i].get_ab_line())]
+        subset = [
+            self.primary_nodes[i]
+            for i in indexes
+            if self.inner_border.intersects(
+                self.primary_nodes[i].get_ab_line().buffer(self.route_params.working_width, cap_style="flat", join_style="mitre")
+            )
+        ]
 
         return subset
 

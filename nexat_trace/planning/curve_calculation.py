@@ -12,7 +12,7 @@ from nexat_trace.shared.config import CorridorStrategy, RoutePlanningConfig
 from nexat_trace.shared.curve import Curve, CurveType
 from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_corridor_line
-
+from debug_visuals import Visualizer
 """
 This module is used to compute dubins paths connecting track segments.
 """
@@ -109,6 +109,14 @@ def connect_ab_lines(
         from_node.intersect_secondary.position,
         to_node.intersect_secondary.position
     )
+    if isinstance(headland_segment, Point):
+        print("headland segment was point, this should not happen")
+        headland_segment = gt.ring_with_origin_at(headland_shape, from_node.intersect_secondary.position)
+        headland_segment = gt.substring(
+            headland_segment,
+            0,
+            headland_segment.length
+        )
 
     headland_segment_compare = gt.get_substring_on_linearring(
         headland_shape.reverse(),
@@ -949,6 +957,15 @@ def trace_curve(
             cut_start,
             cut_end
         )
+        if isinstance(headland_segment, Point):
+            print("headland segment was point, this should not happen")
+            headland_segment = gt.ring_with_origin_at(headland_shape, from_node.intersect_secondary.position)
+            headland_segment = gt.substring(
+                headland_segment,
+                0,
+                headland_segment.length
+            )
+
         is_at_cutout = from_node != 0 and to_index != 0
         curve = search_curve_to_ab(
             ab_segment,

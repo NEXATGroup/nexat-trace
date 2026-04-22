@@ -451,6 +451,7 @@ def simplify_ab_lines(
             for line in replacement.geoms:
                 temp_replacement.append(line.coords)
             replacement = LineString([coord for line in temp_replacement for coord in line])
+        replacement = replacement.simplify(0.001, preserve_topology=True)
         new_ab_lines.append(replacement)
 
     # discard ab lines if on headland
