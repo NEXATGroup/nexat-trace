@@ -23,8 +23,8 @@ class PostSteps(Enum):
     Enum for post processing step procedures.
     """
 
-    CUTOUT_AVOIDANCE = 0  # runs first
-    AB_LINE_INTERPOLATION = 1  # runs last
+    CUTOUT_AVOIDANCE = 0        # runs first
+    AB_LINE_INTERPOLATION = 1   # runs last
 
 
 class RoutePlanningConfig:
