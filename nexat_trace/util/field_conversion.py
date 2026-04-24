@@ -12,10 +12,10 @@ from shapely import (
     Point,
     Polygon,
     oriented_envelope,
+    remove_repeated_points,
     unary_union,
 )
 from shapely.ops import linemerge, nearest_points
-from shapely import remove_repeated_points
 
 from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
 from nexat_trace.shared.config import RoutePlanningConfig
@@ -23,7 +23,6 @@ from nexat_trace.shared.exceptions import GraphConstructionError
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
-from debug_visuals import Visualizer
 
 
 def get_target_headland_from_track_system(
