@@ -93,6 +93,8 @@ class NetGraph:
         self.set_exclude_areas(self.exclude_areas)
 
         if route_params.debug_prints:
+            if route_params.debug_plot_net_graph:
+                self.plot()
             print("Net graph built")
 
     def set_edge(

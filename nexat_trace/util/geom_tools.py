@@ -230,7 +230,7 @@ def erode_linearring(ring: LinearRing, radius) -> LinearRing:
         raise ValueError("Failed to smooth headland ring in one piece")
 
     new_ring = buffer.buffer(
-        1 * radius,
+        1.0 * radius,
         join_style="round",
         resolution=45
     ).exterior
