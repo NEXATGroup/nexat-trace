@@ -14,7 +14,7 @@ from shapely import (
     oriented_envelope,
     unary_union,
 )
-from shapely.ops import linemerge, nearest_points, substring
+from shapely.ops import linemerge, nearest_points
 from shapely import remove_repeated_points
 
 from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
@@ -64,7 +64,7 @@ def get_secondary_positions(
     cut_ab_lines = []
     for line in ab_lines:
         if line.intersects(headland_collection) and line.length > 2.1:
-            cut_line = substring(line, 1.0, line.length - 1.0)
+            cut_line = gt.substring(line, 1.0, line.length - 1.0)
             cut_ab_lines.append(cut_line)
         else:
             cut_ab_lines.append(line)
@@ -341,7 +341,7 @@ def simplify_ab_lines(
             if before and after:
                 closest_before = max(before, key=lambda p: xl.project(p))
                 closest_after = min(after, key=lambda p: xl.project(p))
-                xl_to_headland = substring(xl, xl.project(closest_before), xl.project(closest_after))
+                xl_to_headland = gt.substring(xl, xl.project(closest_before), xl.project(closest_after))
 
         best_replacement = None
         best_dist = float('inf')
@@ -382,9 +382,13 @@ def simplify_ab_lines(
 
             # this check should still be insufficient for some cases
             # but might still be needed for small headland bulges
+            intersects_headland = False
             for ring in headlands:
                 if test_line.intersects(ring):
+                    intersects_headland = True
                     break
+            if intersects_headland:
+                continue
 
             distance = line_1.distance(target)
             if distance < best_dist:
@@ -567,7 +571,7 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
 
     rest = (sum(headland_prep)) % new_ww
     if rest > 0 and sum(headland_prep) > (new_ww):
-        snip = headland_prep[-1]
+        snip = headland_prep.pop()
         temp = snip + (new_ww - rest)
         if temp > new_ww / 2:
             offs = new_ww / 2
@@ -785,6 +789,7 @@ def get_corridor_line(
     inner_border_poly = Polygon(inner_border)
 
     def get_intersection_line_savely(line: LineString, polygon: Polygon) -> LineString | None:
+        """Gets the intersection between a line and a polygon and ensure it returns a LineString."""
         intersection = line.intersection(polygon, grid_size=0)
         if isinstance(intersection, MultiLineString):
             for i in range(len(intersection.geoms)):
@@ -825,6 +830,11 @@ def get_corridor_line(
     middle_clipped = extended.intersection(inner_border_poly)
 
     def fallback_line(offset_line: LineString) -> LineString:
+        """Handels the case where an offset line is completely outside the inner border and thus the intersection is empty.
+
+        This basically handels the edge of the field. Using nearest points is a bit dodgy but it works. Could lead to unnecessary
+        hooks.
+        """
         p1, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[0])
         p2, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[-1])
         return LineString([p1, p2])
@@ -839,49 +849,48 @@ def get_corridor_line(
         middle_clipped = fallback_line(extended)
         print("Middle clipped is empty, using fallback line")
 
-    # make sure we have LineStrings after clipping, if not fallback to original line
-    if isinstance(left_clipped, MultiLineString):
-        for line in left_clipped.geoms:
-            if line.length > 0.1:
-                left_clipped = line
-                break
-    if isinstance(right_clipped, MultiLineString):
-        for line in right_clipped.geoms:
-            if line.length > 0.1:
-                right_clipped = line
-                break
-    if isinstance(middle_clipped, MultiLineString):
-        for line in middle_clipped.geoms:
-            if line.length > 0.1:
-                middle_clipped = line
-                break
+    # TODO find a better check to filter unnecessary hooks at cutouts
+    def recombine_multilinestring(ml_string: MultiLineString) -> LineString:
+        new_line = []
+        for seg in ml_string.geoms:
+            if seg.length < 0.1:
+                continue
+            new_line.extend(seg.coords)
+        return LineString(new_line)
 
-    left_clipped = gt.extend_line(left_clipped, implement_working_offset, extend_back=True)
-    right_clipped = gt.extend_line(right_clipped, implement_working_offset, extend_back=True)
-    middle_clipped = gt.extend_line(middle_clipped, implement_working_offset, extend_back=True)
-    # if not isinstance(left_clipped, LineString) or not isinstance(right_clipped, LineString):
-    #     print("Clipped offsets are not LineStrings, returning AB line")
-    #     return ab_line  # fallback
-    # at edges left or right might be outside the inner border
-    # left_clipped = left_clipped if not left_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
-    # right_clipped = right_clipped if not right_clipped.is_empty else gt.substring(extended, 0.49, 0.51)
+    if isinstance(left_clipped, MultiLineString):
+        left_clipped = recombine_multilinestring(left_clipped)
+    if isinstance(right_clipped, MultiLineString):
+        right_clipped = recombine_multilinestring(right_clipped)
+    if isinstance(middle_clipped, MultiLineString):
+        middle_clipped = recombine_multilinestring(middle_clipped)
+    # mind the working offset of the implement
+    left_clipped = gt.extend_line(left_clipped, implement_working_offset, extend_back=False)
+    right_clipped = gt.extend_line(right_clipped, implement_working_offset, extend_back=False)
+    middle_clipped = gt.extend_line(middle_clipped, implement_working_offset, extend_back=False)
+    left_clipped = gt.substring(left_clipped, implement_working_offset, left_clipped.length)
+    right_clipped = gt.substring(right_clipped, implement_working_offset, right_clipped.length)
+    middle_clipped = gt.substring(middle_clipped, implement_working_offset, middle_clipped.length)
 
     left_start = extended.project(left_clipped.boundary.geoms[0])
     left_end = extended.project(left_clipped.boundary.geoms[-1])
+    if left_end <= left_start:
+        left_start, left_end = left_end, left_start
 
     right_start = extended.project(right_clipped.boundary.geoms[0])
     right_end = extended.project(right_clipped.boundary.geoms[-1])
+    if right_end <= right_start:
+        right_start, right_end = right_end, right_start
 
     middle_start = extended.project(middle_clipped.boundary.geoms[0])
     middle_end = extended.project(middle_clipped.boundary.geoms[-1])
+    if middle_end <= middle_start:
+        middle_start, middle_end = middle_end, middle_start
 
     valid_start = min(left_start, right_start, middle_start)
     valid_end = max(left_end, right_end, middle_end)
-    if valid_end <= valid_start:
-        valid_start, valid_end = valid_end, valid_start
-        # return ab_line  # fallback
 
-    corridor_line = substring(extended, valid_start, valid_end)
+    corridor_line = gt.substring(extended, valid_start, valid_end)
     if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
         return remove_repeated_points(corridor_line, 0.01)
     return None  # remove_repeated_points(ab_line, 0.01)

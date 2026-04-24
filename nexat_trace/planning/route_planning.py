@@ -24,6 +24,7 @@ from nexat_trace.shared.weights import Weights
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import field_conversion
 from nexat_trace.util import geom_tools as gt
+from debug_visuals import Visualizer
 
 """
 This module can be used to define and solve vehicle routing problems using
@@ -207,6 +208,7 @@ def get_route(routing,
         track_graph.target_headlands,
         field_border,
         inner_border,
+        track_graph.inner_border,
         ab_lines,
         route_params,
         progress_out = progress_out
@@ -553,6 +555,7 @@ def navigate_from_to(
             track_graph.target_headlands,
             track_graph.field_border,
             inner_border,
+            track_graph.inner_border,
             track_graph.ab_lines,
             route_params,
             True
@@ -703,6 +706,7 @@ def navigate_from_to(
             track_graph.target_headlands,
             track_graph.field_border,
             inner_border,
+            track_graph.inner_border,
             track_graph.ab_lines,
             route_params,
             True

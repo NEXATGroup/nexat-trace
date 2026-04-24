@@ -361,7 +361,9 @@ class TrackGraph:
             self.primary_nodes[i]
             for i in indexes
             if self.inner_border.intersects(
-                self.primary_nodes[i].get_ab_line().buffer(self.route_params.working_width, cap_style="flat", join_style="mitre")
+                self.primary_nodes[i]
+                .get_ab_line()
+                .buffer(self.route_params.working_width / 2, cap_style="flat", join_style="mitre")
             )
         ]
         return subset
