@@ -19,8 +19,6 @@ from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
 from nexat_trace.util.geom_tools import angle_between_lines
 
-from debug_visuals import Visualizer
-
 
 class TrackGraph:
     """
