@@ -564,21 +564,30 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
         if i == 0:
             head_width /= 2
         headland_prep.append(head_width)
-    offs = 0
-    if sum(headland_prep) < new_ww:
-        offs += new_ww - sum(headland_prep)
+    if route_params.last_driven_headland_index is not None and route_params.last_driven_headland_index < len(
+        track_system.headlands
+    ):
+        print(f"Using last driven headland index {route_params.last_driven_headland_index} for inner border calculation")
+        outer_headland_rings = track_system.headlands[route_params.last_driven_headland_index]
+        outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
+        inner_border = outer_headland_poly.buffer(route_params.working_width / 2 * -1, resolution=20, cap_style=2, join_style=2)
+    else:
+        print("No driven headland index provided, calculating inner border automatically")
+        offs = 0
+        if sum(headland_prep) < new_ww:
+            offs += new_ww - sum(headland_prep)
 
-    rest = (sum(headland_prep)) % new_ww
-    if rest > 0 and sum(headland_prep) > (new_ww):
-        snip = headland_prep.pop()
-        temp = snip + (new_ww - rest)
-        if temp > new_ww / 2:
-            offs = new_ww / 2
-        else:
-            offs = temp
-    outer_headland_rings = track_system.headlands[0]  # TODO make this support multi part fields
-    outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
-    inner_border = outer_headland_poly.buffer((sum(headland_prep[1:]) + offs) * -1, resolution=20, cap_style=2, join_style=2)
+        rest = (sum(headland_prep)) % new_ww
+        if rest > 0 and sum(headland_prep) > (new_ww):
+            snip = headland_prep.pop()
+            temp = snip + (new_ww - rest)
+            if temp > new_ww / 2:
+                offs = new_ww / 2
+            else:
+                offs = temp
+        outer_headland_rings = track_system.headlands[0]  # TODO make this support multi part fields
+        outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
+        inner_border = outer_headland_poly.buffer((sum(headland_prep[1:]) + offs) * -1, resolution=20, cap_style=2, join_style=2)
 
     if isinstance(inner_border, Polygon):
         inner_border = MultiPolygon([inner_border])
