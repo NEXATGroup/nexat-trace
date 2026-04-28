@@ -12,8 +12,9 @@ from shapely import (
     Point,
     Polygon,
     oriented_envelope,
+    unary_union,
 )
-from shapely.ops import substring
+from shapely.ops import linemerge, nearest_points, substring
 
 from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
 from nexat_trace.shared.config import RoutePlanningConfig
@@ -60,7 +61,7 @@ def get_secondary_positions(
     headland_collection = GeometryCollection(headlands)
     cut_ab_lines = []
     for line in ab_lines:
-        if line.intersects(headland_collection) and line.length > 2.0:
+        if line.intersects(headland_collection) and line.length > 2.1:
             cut_line = substring(line, 1.0, line.length - 1.0)
             cut_ab_lines.append(cut_line)
         else:
@@ -75,7 +76,6 @@ def get_secondary_positions(
     multi_ab_lines_unextended = MultiLineString(cut_ab_lines)
 
     for line in cut_ab_lines:
-
         # Check front of line for collisions
         forward_line = LineString(line)
         forward_end = Point(line.coords[-1])
@@ -85,7 +85,7 @@ def get_secondary_positions(
             headland = headlands[i]
             extended_line = gt.extend_line_in_bounds(forward_line, headlands[0], extend_back = False)
             # extend line beyond headland ring to make clear intersection
-            extended_line = gt.extend_line(extended_line, 1.0)
+            extended_line = gt.extend_line(extended_line, 1.0, extend_back = False)
 
             intersection = extended_line.intersection(headland)
             if isinstance(intersection, MultiPoint):
@@ -132,7 +132,7 @@ def get_secondary_positions(
             headland = headlands[i]
             extended_line = gt.extend_line_in_bounds(backward_line, headlands[0], extend_back = False)
             # extend line beyond headland ring to make clear intersection
-            extended_line = gt.extend_line(extended_line, 1.0)
+            extended_line = gt.extend_line(extended_line, 1.0, extend_back = False)
 
             intersection = extended_line.intersection(headland)
             if isinstance(intersection, MultiPoint):
@@ -193,7 +193,7 @@ def get_secondary_positions(
             slices = list(difference.geoms)
 
             for slice_line in slices:
-                if slice_line.length < 0.1:
+                if slice_line.length < route_params._track_width:
                     continue
                 p1 = Point(slice_line.coords[0])
                 p2 = Point(slice_line.coords[-1])
@@ -292,83 +292,164 @@ def connect_rings(
 def simplify_ab_lines(
         old_ab_lines: List[LineString],
         headlands: List[LinearRing],
-        route_params: RoutePlanningConfig) -> Tuple[List[LineString], bool]:
+        route_params: RoutePlanningConfig) -> List[LineString]:
     """
     Removes any vertices in the ab lines accept for the first and last one.
 
     Checks every combination of lines if they are split by a bulge in only the inner most headland.
     If they are, connects them into a single ab-line.
     """
-
-    extra_vertices = any(len(line.coords) > 2 for line in old_ab_lines)
-
-    simplify_pairs = []
+    simplify_pairs = set()
     replacements = []
     max_extension_length = 0.0
+    difference = route_params._track_width * 0.5
     for ring in headlands:
         max_extension_length += ring.length
 
-    for i in range(len(old_ab_lines)):
-        if i in simplify_pairs:
-            continue
+    for i in range(len(old_ab_lines) - 1):
         line_1 = old_ab_lines[i]
 
-        xl1 = gt.extend_line(line_1, max_extension_length)
-        for ii in range(i, len(old_ab_lines)):
+        if line_1.length < route_params.min_ab_line_length:
+            simplify_pairs.add(i)
+            if route_params.debug_prints:
+                print(f"Removing ab line {line_1} because it is shorter than min_ab_line_length")
+            continue
+
+        xl = gt.extend_line(line_1, max_extension_length)
+
+        xl_intersections = []
+        for ring in headlands:
+            intersection = xl.intersection(ring)
+            if isinstance(intersection, MultiPoint):
+                xl_intersections.extend(list(intersection.geoms))
+            elif isinstance(intersection, Point):
+                xl_intersections.append(intersection)
+                if route_params.debug_prints:
+                    print("Only one intersection with headland for line, might return wrong results")
+
+        # Trim xl to the segment between the two closest intersections
+        # This moves the headland intersection check to here and should make it more reliable
+        if len(xl_intersections) >= 2:
+            centroid = line_1.centroid
+            centroid_proj = xl.project(centroid)
+
+            before = [p for p in xl_intersections if xl.project(p) < centroid_proj]
+            after = [p for p in xl_intersections if xl.project(p) >= centroid_proj]
+
+            if before and after:
+                closest_before = max(before, key=lambda p: xl.project(p))
+                closest_after = min(after, key=lambda p: xl.project(p))
+                xl_to_headland = substring(xl, xl.project(closest_before), xl.project(closest_after))
+
+        best_replacement = None
+        best_dist = float('inf')
+
+        for ii in range(i + 1, len(old_ab_lines)):
             line_2 = old_ab_lines[ii]
 
             if line_1.equals(line_2):
-                continue
+                # if they are equal just throw the first away and search replacements for the second
+                simplify_pairs.add(i)
+                break
 
-            xl2 = gt.extend_line(line_2, max_extension_length)
-            if not xl1.dwithin(xl2, 1.0):
+            # Find closest point on 2nd line and orient coordinates accordingly
+            start = Point(line_2.coords[0])
+            end = Point(line_2.coords[-1])
+            if line_1.distance(start) < line_1.distance(end):
+                target = start
+                coords = list(line_2.coords)
+            else:
+                target = end
+                coords = list(line_2.coords)[::-1]
+
+            if difference < xl_to_headland.distance(target):
                 continue
 
             # make constructed line covering the line pair and check for intersection with headland
-            coords = list(line_1.coords) + list(line_2.coords)
+            if line_2.distance(Point(line_1.coords[0])) < line_2.distance(Point(line_1.coords[-1])):
+                coords = list(line_1.coords)[::-1] + coords
+            else:
+                coords = list(line_1.coords) + coords
+            j = 1
+            while j < len(coords):
+                if Point(coords[j]).distance(Point(coords[j - 1])) < 0.01:
+                    coords.pop(j)
+                else:
+                    j += 1
             test_line = LineString(coords)
 
-            is_candidate = True
+            # this check should still be insufficient for some cases
+            # but might still be needed for small headland bulges
             for ring in headlands:
                 if test_line.intersects(ring):
-                    is_candidate = False
                     break
 
-            if not is_candidate:
-                continue
+            distance = line_1.distance(target)
+            if distance < best_dist:
+                best_dist = distance
+                best_replacement = test_line
+                best_partner = ii
 
-            # found line pair to simplify
-            replacement_coords = list(test_line.coords)
-            replacement_coords.sort(key=lambda coord: test_line.centroid.distance(Point(coord)))
-            furthest = Point(replacement_coords[-1])
-            replacement_coords.sort(key=lambda coord: furthest.distance(Point(coord)))
-            replacement = LineString(replacement_coords)
-            replacement_centroid = replacement.centroid
-            replacement_coords.sort(key=lambda coord: replacement_centroid.distance(Point(coord)))
+        if best_replacement:
 
-            replacement = LineString([replacement_coords[-1], replacement_coords[-2]])
-
-            simplify_pairs.extend([i, ii])
-            replacements.append(replacement)
+            simplify_pairs.update([i, best_partner])
+            replacements.append(best_replacement)
 
     new_ab_lines: List[LineString] = old_ab_lines.copy()
+    removed_ab_lines = []
     for index in simplify_pairs:
         try:
+            removed_ab_lines.append(old_ab_lines[index])
             new_ab_lines.remove(old_ab_lines[index])
         except ValueError:
             continue
 
+    problematic_replacements = []
     # look for overlapping replacements and only take one covering both
-    for replacement in replacements:
-        covered_by_other = False
-        for other_replacement in replacements:
+    i = 0
+    while i < len(replacements):
+        replacement = replacements[i]
+        ii = i + 1
+        while ii < len(replacements):
+            other_replacement = replacements[ii]
+
             if replacement == other_replacement:
-                continue
-            if replacement.dwithin(other_replacement, 1.0) and replacement.length < other_replacement.length:
-                covered_by_other = True
-                break
-        if not covered_by_other:
-            new_ab_lines.append(replacement)
+                replacements.pop(ii)
+            elif replacement.dwithin(other_replacement, 1.0):
+                # The following line fails on lines that arent sharing an endpoint
+                temp_replacement = linemerge(unary_union([replacement, other_replacement]))
+                if isinstance(temp_replacement, MultiLineString):
+                    problematic_replacements.append(replacement)
+                    problematic_replacements.append(other_replacement)
+                    p1, p2 = nearest_points(replacement, other_replacement)
+
+                    # Find which endpoints are closest and connect them
+                    if isinstance(replacement, MultiLineString):
+                        replacement = linemerge(replacement)
+                    if isinstance(other_replacement, MultiLineString):
+                        other_replacement = linemerge(other_replacement)
+                    coords1 = list(replacement.coords)
+                    coords2 = list(other_replacement.coords)
+
+                    # Orient both lines so the closest endpoints face each other
+                    if Point(coords1[0]).distance(p1) < Point(coords1[-1]).distance(p1):
+                        coords1 = coords1[::-1]
+                    if Point(coords2[0]).distance(p2) < Point(coords2[-1]).distance(p2):
+                        coords2 = coords2[::-1]
+
+                    temp_replacement = LineString(coords1 + coords2)
+                replacement = temp_replacement
+                replacements.pop(ii)
+            else:
+                ii += 1
+
+        i += 1
+        if isinstance(replacement, MultiLineString):
+            temp_replacement = []
+            for line in replacement.geoms:
+                temp_replacement.append(line.coords)
+            replacement = LineString([coord for line in temp_replacement for coord in line])
+        new_ab_lines.append(replacement)
 
     # discard ab lines if on headland
     multi_headland = MultiLineString(headlands)
@@ -379,7 +460,7 @@ def simplify_ab_lines(
         )
     ]
 
-    return new_ab_lines, extra_vertices
+    return new_ab_lines
 
 
 def track_system_to_primaries_secondaries(
@@ -400,13 +481,8 @@ def track_system_to_primaries_secondaries(
 
     ab_lines = list(track_system.ab_lines.geoms)
 
-    ab_lines, extra_vertices = simplify_ab_lines(ab_lines, headlands, route_params)
+    ab_lines = simplify_ab_lines(ab_lines, headlands, route_params)
     secondaries = get_secondary_positions(ab_lines, headlands, route_params)
-
-    if extra_vertices:
-        warnings.append(PlanningMsg.EXTRA_AB_LINE_POINTS_FOUND)
-        if route_params.debug_prints:
-            print("Found extra vertices in ab lines")
 
     return ab_lines, secondaries, warnings
 

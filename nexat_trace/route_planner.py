@@ -646,3 +646,4 @@ class RoutePlanner:
         """
         self.route_params.debug_plot_field = False
         self.route_params.debug_plot_track_graph = False
+        self.route_params.debug_plot_net_graph = False

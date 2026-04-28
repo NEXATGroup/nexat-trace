@@ -42,7 +42,7 @@ def plot_linestring(line: LineString, color="black", linewidth=2, text=None, wit
 
     if text is not None or with_arrow:
         mid_point: Point
-        mid_point = line.interpolate(0.5, normalized = True)
+        mid_point = line.interpolate(0.5 + random.random() * 0.1, normalized = True)
 
     if with_arrow:
         dx = (line.coords[-1][0] - line.coords[0][0]) * 0.18

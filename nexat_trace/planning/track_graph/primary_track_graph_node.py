@@ -129,6 +129,8 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             got_one_secondary = True
 
         if not got_one_secondary:
+            if route_params.debug_prints:
+                print("No secondary neighbor was drivably reachable from primary neighbor, trying front and back secondaries")
             secondary1 = intersecting_secondary.back_secondary
             line2 = LineString([secondary1.position, secondary1.back_secondary.position])
             line3 = LineString([front_corridor.position, intersecting_secondary.position])
@@ -198,7 +200,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             # return closest node on headland
             sorted_secondaries = secondary_nodes.copy()
             sorted_secondaries.sort(key = lambda node: self.position.distance(node.position))
-            return secondary_nodes[0]
+            return sorted_secondaries[0]
         else:
             candidates = [secondary_nodes[i] for i in indexes]
             candidates.sort(key = lambda node: self.position.distance(node.position))
