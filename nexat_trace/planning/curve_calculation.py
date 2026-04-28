@@ -599,11 +599,6 @@ def search_curve_to_headland(
         path = [p1, p2]
         return Curve(path, CurveType.U_TURN, False)
 
-    s_d = 0.011
-    start_dist = max(0, min(s_d, path.length - s_d))
-    end_dist = path.length - s_d
-    path = gt.substring(path, start_dist, end_dist)
-
     curve_type = CurveType.U_TURN
     valid = True
 
@@ -682,10 +677,6 @@ def search_curve_to_ab(
         p1, p2 = nearest_points(headland_segment, working_corridor)
         path = [p1, p2]
         return Curve(path, CurveType.U_TURN, False)
-    s_d = 0.011
-    start_dist = max(0, min(s_d, path.length - s_d - 0.001))
-    end_dist = path.length - s_d
-    path = gt.substring(path, start_dist, end_dist)
 
     curve_type = CurveType.U_TURN
     valid = True

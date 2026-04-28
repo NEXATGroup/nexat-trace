@@ -11,10 +11,4 @@ pip install -r requirements_dev.txt
 # build cython dubins extension dependency and install
 python3 setup.py bdist_wheel
 
-<<<<<<< HEAD
-pip install dist/nexat_trace-* --force-reinstall --no-cache-dir
-# sed -i 's/include-system-site-packages = false/include-system-site-packages = true/' .venv/pyvenv.cfg
-
-=======
 pip install dist/nexat_trace-* 
->>>>>>> fix/updateField

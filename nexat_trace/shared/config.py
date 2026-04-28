@@ -130,6 +130,8 @@ class RoutePlanningConfig:
         cleared manually in the meantime.
     - debug_plot_track_graph:
         Wether or not the planner should plot the field graph before route optimization
+    - debug_plot_net_graph:
+        Wether or not the planner should plot the net graph before route optimization
 
     Private members
     -------------
@@ -138,6 +140,9 @@ class RoutePlanningConfig:
         Is set automatically
     - _default_enabled_post_processing_steps:
         Controls which steps run per default
+    - _segmentation_avoidance_distance:  # TODO remove when problem has ben resolved
+        Minimum allowed distance between consecutive coordinates when recombining a path. Used to avoid creating spurious segments
+        (extra LineStrings in the MultiLineString) from points that are numerically distinct but geometrically too close.
     """
 
     def __init__(self):
@@ -168,7 +173,7 @@ class RoutePlanningConfig:
             headland_cost_exponent=1,
             corridor_error_cost=200.0,
             global_cost_offset=0.0,
-            global_cost_gain=1.0
+            global_cost_gain=1.0,
         )
 
         # Cost multiplier for neighbor curves
@@ -239,9 +244,7 @@ class RoutePlanningConfig:
         # ----------- POSTPROCESSING PARAMETERS ------------ #
         #
 
-        _default_enabled_post_processing_steps = [
-            PostSteps.CUTOUT_AVOIDANCE
-        ]
+        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE]
 
         self.post_processing_steps = {}
         for step in PostSteps:
@@ -257,6 +260,7 @@ class RoutePlanningConfig:
         # debug plotting using matplotlib
         self.debug_plot_field: bool = False
         self.debug_plot_track_graph: bool = False
+        self.debug_plot_net_graph: bool = False
 
         #
         # ---------------- MISC PARAMETERS ----------------- #
@@ -279,6 +283,8 @@ class RoutePlanningConfig:
         self.min_ab_line_length = 0.1  # m
 
         self.disable_pi_curves = True
+
+        self._segmentation_avoidance_distance = 0.011  # m
 
     def copy(self):
         """
@@ -310,6 +316,7 @@ class RoutePlanningConfig:
         new.debug_prints = self.debug_prints
         new.debug_plot_field = self.debug_plot_field
         new.debug_plot_track_graph = self.debug_plot_track_graph
+        new.debug_plot_net_graph = self.debug_plot_net_graph
         new.vehicle_speed_straight = self.vehicle_speed_straight
         new.vehicle_speed_curve = self.vehicle_speed_curve
         new.speed_curve_angle_threshold = self.speed_curve_angle_threshold
@@ -319,6 +326,7 @@ class RoutePlanningConfig:
         new.direct_curve_link_distance = self.direct_curve_link_distance
         new.delay_on_direction_change = self.delay_on_direction_change
         new.min_ab_line_length = self.min_ab_line_length
+        new._segmentation_avoidance_distance = self._segmentation_avoidance_distance
         new.disable_pi_curves = self.disable_pi_curves
 
         return new
@@ -348,12 +356,11 @@ class RoutePlanningConfig:
             f"  post_processing_steps={self.post_processing_steps},\n"
             f"  robust_curve_calculation_only={self.robust_curve_calculation_only},\n"
             f"  heuristic_corridor_angle={self.heuristic_corridor_angle}\n"
-
             f"  _track_width={self._track_width},\n"
-
             f"  debug_prints={self.debug_prints},\n"
             f"  debug_plot_field={self.debug_plot_field},\n"
             f"  debug_plot_track_graph={self.debug_plot_track_graph},\n"
+            f"  debug_plot_net_graph={self.debug_plot_net_graph},\n"
             f")"
         )
 
@@ -361,6 +368,7 @@ class RoutePlanningConfig:
         """
         Returns a serialized json string of the config.
         """
+
         def serialize(obj):
             if isinstance(obj, (CorridorStrategy, CurveType, PostSteps)):
                 return obj.name
@@ -416,7 +424,7 @@ class RoutePlanningConfig:
             data["weights"]["missed_path_penalty"],
             data["weights"]["different_block_penalty"],
             data["weights"]["global_cost_offset"],
-            data["weights"]["global_cost_gain"]
+            data["weights"]["global_cost_gain"],
         )
         new.neighbor_curve_distance_multiplier = data["neighbor_curve_distance_multiplier"]
         new.max_block_size = data["max_block_size"]
@@ -438,6 +446,7 @@ class RoutePlanningConfig:
         new.heuristic_corridor_angle = data["heuristic_corridor_angle"]
         new.debug_plot_field = data["debug_plot_field"]
         new.debug_plot_track_graph = data["debug_plot_track_graph"]
+        new.debug_plot_net_graph = data["debug_plot_net_graph"]
         new.debug_prints = data["debug_prints"]
 
         return new
