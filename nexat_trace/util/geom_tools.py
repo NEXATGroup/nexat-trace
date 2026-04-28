@@ -6,7 +6,6 @@ import dubins
 import numpy as np
 from numpy import typing as npt
 from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, remove_repeated_points
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, remove_repeated_points
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, substring, unary_union
 
