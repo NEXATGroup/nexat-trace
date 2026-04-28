@@ -1,7 +1,7 @@
 from math import pi
 from typing import Dict, List
 
-from shapely import LinearRing, LineString, MultiLineString, Point, Polygon, MultiPolygon
+from shapely import LinearRing, LineString, MultiLineString, MultiPolygon, Point, Polygon
 from shapely.ops import substring
 
 from nexat_trace.planning import curve_calculation
