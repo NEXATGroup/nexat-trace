@@ -1,7 +1,7 @@
 from math import pi
 from typing import List, Tuple
 
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, GeometryCollection
 from shapely.ops import substring
 from shapely.strtree import STRtree
 
@@ -286,6 +286,35 @@ class TrackGraph:
             lines = [node.get_ab_line() for node in mask]
             mask = MultiLineString(lines)
 
+        #  check if we need irregular ab lines to cover the whole area
+        selected_lines = MultiLineString(subset_lines[optimal_index])
+        subset_coverage = selected_lines.buffer(
+            working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
+        )
+        uncovered = working_area.difference(subset_coverage)
+        first_line = selected_lines.geoms[0]
+        extended_first = gt.extend_line(first_line, 1000000.0)
+
+        for geom in uncovered.geoms:
+            if isinstance(geom, Polygon) and geom.area > 0.1:
+                centroid = geom.centroid
+                distance = extended_first.distance(centroid)
+
+                # determine sign: which side of the line is the centroid on?
+                x1, y1 = extended_first.coords[0]
+                x2, y2 = extended_first.coords[-1]
+                cross = (x2 - x1) * (centroid.y - y1) - (y2 - y1) * (centroid.x - x1)
+                if cross < 0:
+                    distance = -distance
+
+                parallel = extended_first.parallel_offset(distance)
+                parallel = parallel.intersection(self.field_border)
+                if isinstance(parallel, MultiLineString):
+                    parallel = LineString(parallel.geoms[0].coords[0], parallel.geoms[0].coords[-1])
+                elif isinstance(parallel, GeometryCollection):
+                    lines = [geom for geom in parallel.geoms if isinstance(geom, LineString)]
+                    parallel = LineString(lines[0].coords[0], lines[-1].coords[-1])
+                selected_lines = selected_lines.union(parallel)
         nodes_indexes = self.primary_node_tree.query(mask, "dwithin", 1.0)
         nodes = [self.primary_nodes[i] for i in nodes_indexes]
         nodes.sort(key=lambda node: node.index)
