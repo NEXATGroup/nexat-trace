@@ -24,7 +24,6 @@ from nexat_trace.shared.weights import Weights
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import field_conversion
 from nexat_trace.util import geom_tools as gt
-from debug_visuals import Visualizer
 
 """
 This module can be used to define and solve vehicle routing problems using

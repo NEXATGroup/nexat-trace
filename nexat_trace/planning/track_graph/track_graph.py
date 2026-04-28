@@ -1,7 +1,7 @@
 from math import pi
 from typing import List, Tuple
 
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, GeometryCollection
+from shapely import GeometryCollection, LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
 from shapely.ops import substring
 from shapely.strtree import STRtree
 
@@ -296,6 +296,7 @@ class TrackGraph:
         extended_first = gt.extend_line(first_line, 1000000.0)
 
         for geom in uncovered.geoms:
+            # this is a dodgy check
             if isinstance(geom, Polygon) and geom.area > 0.1:
                 centroid = geom.centroid
                 distance = extended_first.distance(centroid)
