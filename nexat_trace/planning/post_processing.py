@@ -205,7 +205,7 @@ def cutout_avoidance(route: Route) -> None:
 
                 curve_on = LineString(list(curve_on.coords) + [extension_point])
 
-            s_d = 0.011  # s_d small distance to prevent unnecessary segmentation
+            s_d = route._route_params._segmentation_avoidance_distance  # s_d small distance to prevent unnecessary segmentation
             end_dist = curve_on_ab_segment.project(Point(curve_on.coords[0])) - s_d
             curve_on_ab_segment = substring(
                 curve_on_ab_segment,

@@ -133,6 +133,9 @@ class RoutePlanningConfig:
         Is set automatically
     - _default_enabled_post_processing_steps:
         Controls which steps run per default
+    - _segmentation_avoidance_distance:  # TODO remove when problem has ben resolved
+        Minimum allowed distance between consecutive coordinates when recombining a path. Used to avoid creating spurious segments
+        (extra LineStrings in the MultiLineString) from points that are numerically distinct but geometrically too close.
     """
 
     def __init__(self):
@@ -269,6 +272,8 @@ class RoutePlanningConfig:
 
         self.disable_pi_curves = True
 
+        self._segmentation_avoidance_distance = 0.011  # m
+
     def copy(self):
         """
         Returns a deep copy of the instance.
@@ -307,6 +312,7 @@ class RoutePlanningConfig:
         new.direct_curve_link_distance = self.direct_curve_link_distance
         new.delay_on_direction_change = self.delay_on_direction_change
         new.min_ab_line_length = self.min_ab_line_length
+        new._segmentation_avoidance_distance = self._segmentation_avoidance_distance
         new.disable_pi_curves = self.disable_pi_curves
 
         return new
