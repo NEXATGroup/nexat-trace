@@ -203,10 +203,6 @@ class TrackGraph:
         if route_params.debug_plot_track_graph:
             from nexat_trace.util import plot_geometry as pg
             self.plot()
-            # import os
-            # pathString = os.path.expanduser("~/Documents/Debug/fieldGraph.svg")
-            # os.makedirs(os.path.dirname(pathString), exist_ok=True)
-            # pg.save_fig(pathString)
             pg.show_plot()
 
     def plot_field(self, headlands):
@@ -473,7 +469,9 @@ class TrackGraph:
             self.primary_nodes[i]
             for i in indexes
             if self.inner_border.intersects(
-                self.primary_nodes[i].get_ab_line().buffer(self.route_params.working_width, cap_style="flat", join_style="mitre")
+                self.primary_nodes[i]
+                .get_ab_line()
+                .buffer(self.route_params.working_width / 2, cap_style="flat", join_style="mitre")
             )
         ]
 

@@ -572,7 +572,6 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
         outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
         inner_border = outer_headland_poly.buffer(route_params.working_width / 2 * -1, resolution=20, cap_style=2, join_style=2)
     else:
-        print("No driven headland index provided, calculating inner border automatically")
         offs = 0
         if sum(headland_prep) < new_ww:
             offs += new_ww - sum(headland_prep)
@@ -790,8 +789,6 @@ def get_corridor_line(
     Calculates the working corridor line. This respects the working width and the turning headland geometry.
     """
     headland_poly = Polygon(turning_headland)
-    if not headland_poly.is_simple:
-        print("Warning: headland polygon is not simple")
     min_width = 0.0001
     half_width = working_width / 2.0 - min_width
     inner_border_poly = Polygon(inner_border)

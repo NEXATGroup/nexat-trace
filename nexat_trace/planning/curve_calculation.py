@@ -110,7 +110,7 @@ def connect_ab_lines(
         to_node.intersect_secondary.position
     )
     if isinstance(headland_segment, Point):
-        print("headland segment was point, this should not happen")
+        # if this happens just do a roundtrip
         headland_segment = gt.ring_with_origin_at(headland_shape, from_node.intersect_secondary.position)
         headland_segment = gt.substring(
             headland_segment,
@@ -955,7 +955,7 @@ def trace_curve(
             cut_end
         )
         if isinstance(headland_segment, Point):
-            print("headland segment was point, this should not happen")
+            # if this happens just do a roundtrip
             headland_segment = gt.ring_with_origin_at(headland_shape, from_node.intersect_secondary.position)
             headland_segment = gt.substring(
                 headland_segment,
