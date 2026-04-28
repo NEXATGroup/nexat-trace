@@ -23,6 +23,7 @@ from nexat_trace.shared.exceptions import GraphConstructionError
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
+from debug_visuals import Visualizer
 
 
 def get_target_headland_from_track_system(
@@ -824,7 +825,9 @@ def get_corridor_line(
         else:
             extended = gt.extend_line_in_bounds(ab_line, headland_poly, headland_poly.length)
             extended = get_intersection_line_savely(extended, headland_poly)
-
+        if extended is None or extended.is_empty:
+            # this can happen when we are working an ab line which only has working area inside the inner_border
+            extended = ab_line
         # Create left/right offsets and clip to headland
         left_offset = extended.offset_curve(half_width)
         right_offset = extended.offset_curve(-half_width)
@@ -845,17 +848,18 @@ def get_corridor_line(
         """
         p1, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[0])
         p2, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[-1])
+        if p1.distance(p2) < 0.01:
+            # trick to avoid errors when both points are the same
+            p1 = extended.boundary.geoms[-1]
+            p2 = extended.boundary.geoms[0]
         return LineString([p1, p2])
 
     if left_clipped is None or left_clipped.is_empty:
         left_clipped = fallback_line(left_offset)
-        print("Left clipped is empty, using fallback line")
     if right_clipped is None or right_clipped.is_empty:
         right_clipped = fallback_line(right_offset)
-        print("Right clipped is empty, using fallback line")
     if middle_clipped is None or middle_clipped.is_empty:
         middle_clipped = fallback_line(extended)
-        print("Middle clipped is empty, using fallback line")
 
     # TODO find a better check to filter unnecessary hooks at cutouts
     def recombine_multilinestring(ml_string: MultiLineString) -> LineString:
@@ -864,6 +868,8 @@ def get_corridor_line(
             if seg.length < 0.1:
                 continue
             new_line.extend(seg.coords)
+        if len(new_line) < 2:
+            return extended.reverse()  # trick to avoid errors
         return LineString(new_line)
 
     if isinstance(left_clipped, MultiLineString):
@@ -876,6 +882,7 @@ def get_corridor_line(
     left_clipped = gt.extend_line(left_clipped, implement_working_offset, extend_back=False)
     right_clipped = gt.extend_line(right_clipped, implement_working_offset, extend_back=False)
     middle_clipped = gt.extend_line(middle_clipped, implement_working_offset, extend_back=False)
+
     left_clipped = gt.substring(left_clipped, implement_working_offset, left_clipped.length)
     right_clipped = gt.substring(right_clipped, implement_working_offset, right_clipped.length)
     middle_clipped = gt.substring(middle_clipped, implement_working_offset, middle_clipped.length)
@@ -897,6 +904,11 @@ def get_corridor_line(
 
     valid_start = min(left_start, right_start, middle_start)
     valid_end = max(left_end, right_end, middle_end)
+
+    # if this is the case, we couldn't find a corridor that we have to work or is smaller than 0.1
+    if valid_end <= valid_start:
+        valid_start = extended.length - 0.01
+        valid_end = extended.length + 0.01
 
     corridor_line = gt.substring(extended, valid_start, valid_end)
     if isinstance(corridor_line, LineString) and not corridor_line.is_empty:

@@ -310,10 +310,10 @@ class TrackGraph:
                 parallel = extended_first.parallel_offset(distance)
                 parallel = parallel.intersection(self.field_border)
                 if isinstance(parallel, MultiLineString):
-                    parallel = LineString(parallel.geoms[0].coords[0], parallel.geoms[0].coords[-1])
+                    parallel = LineString([parallel.geoms[0].coords[0], parallel.geoms[0].coords[-1]])
                 elif isinstance(parallel, GeometryCollection):
                     lines = [geom for geom in parallel.geoms if isinstance(geom, LineString)]
-                    parallel = LineString(lines[0].coords[0], lines[-1].coords[-1])
+                    parallel = LineString([lines[0].coords[0], lines[-1].coords[-1]])
                 selected_lines = selected_lines.union(parallel)
         nodes_indexes = self.primary_node_tree.query(mask, "dwithin", 1.0)
         nodes = [self.primary_nodes[i] for i in nodes_indexes]
