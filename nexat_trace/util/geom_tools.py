@@ -203,7 +203,7 @@ def get_substring_on_linearring(ring, start_point, stop_point) -> LineString:
     )
 
 
-def erode_linearring(ring: LinearRing, radius) -> LinearRing:
+def erode_linearring(ring: LinearRing, radius: float) -> LinearRing:
     """
     Smooths the linear ring to be drivable for the vehicle.
 
@@ -213,13 +213,13 @@ def erode_linearring(ring: LinearRing, radius) -> LinearRing:
     """
     buffer = Polygon(
         ring.buffer(
-            1 * radius,
+            1.0 * radius,
             join_style="round",
             resolution=45
         ).exterior
     )
     buffer = buffer.buffer(
-        -2 * radius,
+        -2.0 * radius,
         join_style="round",
         resolution=45
     )

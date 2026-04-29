@@ -812,26 +812,22 @@ def get_corridor_line(
             return None
 
     # Extend AB line to the turning headland
-    # But at first filter out the case, where the turning headland is the cutout
-    try:
-        extended = get_intersection_line_savely(ab_line, headland_poly)
-        if extended is None or extended.is_empty:
-            extended = gt.extend_line_in_bounds(ab_line, inner_border_poly, inner_border.length)
-            extended = get_intersection_line_savely(extended, inner_border_poly)
-        else:
-            extended = gt.extend_line_in_bounds(ab_line, headland_poly, headland_poly.length)
-            extended = get_intersection_line_savely(extended, headland_poly)
-        if extended is None or extended.is_empty:
-            # this can happen when we are working an ab line which only has working area inside the inner_border
-            extended = ab_line
-        # Create left/right offsets and clip to headland
-        left_offset = extended.offset_curve(half_width)
-        right_offset = extended.offset_curve(-half_width)
-    except Exception as e:
-        raise e
+    # But at first handle the case, where the turning headland is at a cutout
 
-    # need to improve the logic for area worked by headland paths --> this could be a problem for fertilization 28m in particular
-    # unworked_worked_poly = headland_poly.buffer(-1 * working_width / 2.0, cap_style=2, join_style=2)
+    extended = get_intersection_line_savely(ab_line, headland_poly)
+    if extended is None or extended.is_empty:
+        extended = gt.extend_line_in_bounds(ab_line, inner_border_poly, inner_border.length)
+        extended = get_intersection_line_savely(extended, inner_border_poly)
+    else:
+        extended = gt.extend_line_in_bounds(ab_line, headland_poly, headland_poly.length)
+        extended = get_intersection_line_savely(extended, headland_poly)
+    if extended is None or extended.is_empty:
+        # this can happen when we are working an ab line which only has working area inside the inner_border
+        extended = ab_line
+    # Create left/right offsets and clip to headland
+    left_offset = extended.offset_curve(half_width)
+    right_offset = extended.offset_curve(-half_width)
+
     left_clipped = left_offset.intersection(inner_border_poly)
     right_clipped = right_offset.intersection(inner_border_poly)
     middle_clipped = extended.intersection(inner_border_poly)
@@ -857,7 +853,7 @@ def get_corridor_line(
     if middle_clipped is None or middle_clipped.is_empty:
         middle_clipped = fallback_line(extended)
 
-    # TODO find a better check to filter unnecessary hooks at cutouts
+    # TODO find a good check to filter unnecessary hooks at cutouts
     def recombine_multilinestring(ml_string: MultiLineString) -> LineString:
         new_line = []
         for seg in ml_string.geoms:
@@ -878,10 +874,10 @@ def get_corridor_line(
     left_clipped = gt.extend_line(left_clipped, implement_working_offset, extend_back=False)
     right_clipped = gt.extend_line(right_clipped, implement_working_offset, extend_back=False)
     middle_clipped = gt.extend_line(middle_clipped, implement_working_offset, extend_back=False)
-
-    left_clipped = gt.substring(left_clipped, implement_working_offset, left_clipped.length)
-    right_clipped = gt.substring(right_clipped, implement_working_offset, right_clipped.length)
-    middle_clipped = gt.substring(middle_clipped, implement_working_offset, middle_clipped.length)
+    # comment this out, when we can make sure that the driver follows the path in the right direction
+    # left_clipped = gt.substring(left_clipped, implement_working_offset, left_clipped.length)
+    # right_clipped = gt.substring(right_clipped, implement_working_offset, right_clipped.length)
+    # middle_clipped = gt.substring(middle_clipped, implement_working_offset, middle_clipped.length)
 
     left_start = extended.project(left_clipped.boundary.geoms[0])
     left_end = extended.project(left_clipped.boundary.geoms[-1])
@@ -903,8 +899,8 @@ def get_corridor_line(
 
     # if this is the case, we couldn't find a corridor that we have to work or is smaller than 0.1
     if valid_end <= valid_start:
-        valid_start = extended.length - 0.01
-        valid_end = extended.length + 0.01
+        valid_start = extended.length / 2 - 0.01
+        valid_end = extended.length / 2 + 0.01
 
     corridor_line = gt.substring(extended, valid_start, valid_end)
     if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
