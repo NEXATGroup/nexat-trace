@@ -1022,6 +1022,13 @@ class TrackGraph:
         primary_node_multipoint = MultiPoint([node.position for node in self.primary_nodes])
         first_point_index = 0
         while not Point(cut_path_points_coords[first_point_index]).dwithin(primary_node_multipoint, 5.0):
+            if first_point_index >= len(cut_path_points_coords):
+                if self.route_params.debug_prints:
+                    print(
+                        f"Cutting path to first node, point {cut_path_points_coords[first_point_index]} is not within 5.0 of any"
+                        + " primary node"
+                    )
+                break
             first_point_index += 1
 
         if first_point_index > 0:
