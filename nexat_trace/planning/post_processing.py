@@ -10,8 +10,6 @@ from nexat_trace.planning import curve_calculation
 from nexat_trace.planning.route import Route
 from nexat_trace.shared.config import PostSteps
 from nexat_trace.util import geom_tools
-from debug_visuals import Visualizer
-
 """
 This module defines post processing steps for routes
 
@@ -327,7 +325,8 @@ def cutout_avoidance(route: Route) -> None:
 
             final_path.extend(segment_path_points)
             if len(geom_tools.segment_line(LineString(segment_path_points), radius_threshold = 13.5 / 10.0)[0]) > 1:
-                print("Segmented line detected after cutout avoidance, consider increasing segmentation_avoidance_distance or decreasing vehicle_turning_radius")
+                print("Segmented line detected after cutout avoidance, consider increasing segmentation_avoidance_distance or"
+                      + " decreasing vehicle_turning_radius")
             last_intersection = intersection
 
     _rebuild_line(route, final_path)
