@@ -2,14 +2,14 @@
 from dataclasses import dataclass
 from typing import List
 
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, remove_repeated_points
 from shapely.ops import substring
-from shapely import remove_repeated_points
 
 from nexat_trace.planning import curve_calculation
 from nexat_trace.planning.route import Route
 from nexat_trace.shared.config import PostSteps
 from nexat_trace.util import geom_tools
+
 """
 This module defines post processing steps for routes
 
