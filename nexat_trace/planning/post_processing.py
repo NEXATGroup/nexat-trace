@@ -4,11 +4,13 @@ from typing import List
 
 from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point
 from shapely.ops import substring
+from shapely import remove_repeated_points
 
 from nexat_trace.planning import curve_calculation
 from nexat_trace.planning.route import Route
 from nexat_trace.shared.config import PostSteps
 from nexat_trace.util import geom_tools
+from debug_visuals import Visualizer
 
 """
 This module defines post processing steps for routes
@@ -172,10 +174,13 @@ def cutout_avoidance(route: Route) -> None:
             while curve_on_ab_segment.distance(intersection.segment) < 1.0:
                 curve_on_ab_segment = substring(curve_on_ab_segment, 0.0, curve_on_ab_segment.length - 0.33)
 
+            # remove numerical artefacts
+            curve_on_ab_segment = remove_repeated_points(curve_on_ab_segment, 0.001)
+            segment_cut = remove_repeated_points(segment_cut, 0.001)
             # curve onto segment
             curve_on = curve_calculation.get_simple_turn_to_headland(
                 curve_on_ab_segment,
-                geom_tools.extend_line(segment_cut, route._route_params._track_width * 0.7),
+                segment_cut,
                 aligned_segment,
                 route._field_border,
                 route._route_params
@@ -203,9 +208,15 @@ def cutout_avoidance(route: Route) -> None:
                 else:
                     extension_point, _ = geom_tools.nearest_points(intersection.segment, extension)
 
-                curve_on = LineString(list(curve_on.coords) + [extension_point])
-
+                curve_on = LineString(list(curve_on.coords))
             s_d = route._route_params._segmentation_avoidance_distance  # s_d small distance to prevent unnecessary segmentation
+            end_dist = curve_on.length - s_d
+            curve_on = substring(
+                curve_on,
+                max(0, min(s_d, end_dist - 0.001)),
+                end_dist
+            )
+
             end_dist = curve_on_ab_segment.project(Point(curve_on.coords[0])) - s_d
             curve_on_ab_segment = substring(
                 curve_on_ab_segment,
@@ -249,6 +260,12 @@ def cutout_avoidance(route: Route) -> None:
                 route._route_params
             )
 
+            end_dist = curve_off.length
+            curve_off = substring(
+                curve_off,
+                max(0, min(s_d, end_dist - 0.001)),
+                end_dist
+            )
             if route._route_params.debug_prints and curve_off is None:
                 print("Could not find curve off of cutout segment on ab line")
                 continue
@@ -277,12 +294,23 @@ def cutout_avoidance(route: Route) -> None:
             )
 
             cut_segment_path_points = [Point(coord) for coord in cut_segment_path.coords]
-
+            interpolated_on_ring = geom_tools.extend_line(
+                curve_on, route._route_params.vehicle_turning_radius * 0.5
+            ).intersection(aligned_segment)
+            if interpolated_on_ring.is_empty:
+                interpolated_on_ring = geom_tools.nearest_points(geom_tools.extend_line(
+                curve_on, route._route_params.vehicle_turning_radius * 0.5
+                ),
+                aligned_segment
+                )[1]
+            if isinstance(interpolated_on_ring, MultiPoint):
+                interpolated_on_ring = list(interpolated_on_ring.geoms)[0]
             if should_be_circled:
-                aligned_segment_circle = geom_tools.ring_with_origin_at(aligned_segment, Point(curve_on.coords[-1]))
+                aligned_segment_circle = geom_tools.ring_with_origin_at(aligned_segment, interpolated_on_ring)
                 # insert circle points before the rest of the calculated segment
                 circle = LineString([Point(coord) for coord in aligned_segment_circle.coords])
-                end_dist = circle.length - s_d
+                projected_end = circle.project(cut_segment_path.boundary.geoms[0])
+                end_dist = max(0, min(circle.length - s_d, projected_end - s_d))
                 circle = geom_tools.substring(circle, max(0, min(s_d, end_dist - 0.001)), end_dist)
                 cut_segment_path_points = (
                     [Point(coord) for coord in list(circle.coords)]
@@ -298,6 +326,8 @@ def cutout_avoidance(route: Route) -> None:
             )
 
             final_path.extend(segment_path_points)
+            if len(geom_tools.segment_line(LineString(segment_path_points), radius_threshold = 13.5 / 10.0)[0]) > 1:
+                print("Segmented line detected after cutout avoidance, consider increasing segmentation_avoidance_distance or decreasing vehicle_turning_radius")
             last_intersection = intersection
 
     _rebuild_line(route, final_path)
