@@ -1097,7 +1097,11 @@ def insert_hook_stops_to_headland(
     )
 
     if working_corridor.length - curve_start_projection > route_params.corridor_threshold:
-        backup_point = working_corridor.interpolate(working_corridor.project(curve_start))
+        backup_point = working_corridor.interpolate(
+            working_corridor.project(
+                curve_start
+            ) - route_params.direction_change_extension_distance
+        )
         points.insert(0, backup_point)
         if working_corridor is None or not isinstance(working_corridor, LineString) or working_corridor.length < 0.01:
             if route_params.debug_prints:
