@@ -18,6 +18,7 @@ from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
 from nexat_trace.util.geom_tools import angle_between_lines
+from debug_visuals import Visualizer
 
 
 class TrackGraph:
@@ -244,7 +245,7 @@ class TrackGraph:
         if skip_ab_lines == 0:
             return self.primary_nodes
         nodes: List[PrimaryTrackGraphNode] = []
-        if start is not None and not self.inner_border.contains(start):
+        if start is not None and not self.field_border.contains(start):
             start = None
 
         if start is None:
@@ -281,6 +282,7 @@ class TrackGraph:
             mask = self._get_mask_with_offset(skip_ab_lines, 0.0, start)
             lines = [node.get_ab_line() for node in mask]
             mask = MultiLineString(lines)
+            optimal_index = 0
 
         #  check if we need irregular ab lines to cover the whole area
         selected_lines = MultiLineString(subset_lines[optimal_index])
