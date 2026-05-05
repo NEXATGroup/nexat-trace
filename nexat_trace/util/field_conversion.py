@@ -12,9 +12,10 @@ from shapely import (
     Point,
     Polygon,
     oriented_envelope,
+    remove_repeated_points,
     unary_union,
 )
-from shapely.ops import linemerge, nearest_points, substring
+from shapely.ops import linemerge, nearest_points
 
 from nexat_trace.planning.track_graph.secondary_track_graph_node import SecondaryTrackGraphNode
 from nexat_trace.shared.config import RoutePlanningConfig
@@ -62,7 +63,7 @@ def get_secondary_positions(
     cut_ab_lines = []
     for line in ab_lines:
         if line.intersects(headland_collection) and line.length > 2.1:
-            cut_line = substring(line, 1.0, line.length - 1.0)
+            cut_line = gt.substring(line, 1.0, line.length - 1.0)
             cut_ab_lines.append(cut_line)
         else:
             cut_ab_lines.append(line)
@@ -339,7 +340,7 @@ def simplify_ab_lines(
             if before and after:
                 closest_before = max(before, key=lambda p: xl.project(p))
                 closest_after = min(after, key=lambda p: xl.project(p))
-                xl_to_headland = substring(xl, xl.project(closest_before), xl.project(closest_after))
+                xl_to_headland = gt.substring(xl, xl.project(closest_before), xl.project(closest_after))
 
         best_replacement = None
         best_dist = float('inf')
@@ -380,9 +381,13 @@ def simplify_ab_lines(
 
             # this check should still be insufficient for some cases
             # but might still be needed for small headland bulges
+            intersects_headland = False
             for ring in headlands:
                 if test_line.intersects(ring):
+                    intersects_headland = True
                     break
+            if intersects_headland:
+                continue
 
             distance = line_1.distance(target)
             if distance < best_dist:
@@ -449,6 +454,7 @@ def simplify_ab_lines(
             for line in replacement.geoms:
                 temp_replacement.append(line.coords)
             replacement = LineString([coord for line in temp_replacement for coord in line])
+        replacement = replacement.simplify(0.001, preserve_topology=True)
         new_ab_lines.append(replacement)
 
     # discard ab lines if on headland
@@ -558,18 +564,32 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
         if i == 0:
             head_width /= 2
         headland_prep.append(head_width)
-    headland_prep.append(mh)
-    offs = mh
-    if sum(headland_prep) < new_ww:
-        offs += new_ww - sum(headland_prep)
+    if route_params.last_driven_headland_index is not None and route_params.last_driven_headland_index < len(
+        track_system.headlands
+    ):
+        print(f"Using last driven headland index {route_params.last_driven_headland_index} for inner border calculation")
+        outer_headland_rings = track_system.headlands[route_params.last_driven_headland_index]
+        outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
+        inner_border = outer_headland_poly.buffer(route_params.working_width / 2 * -1, resolution=20, cap_style=2, join_style=2)
+    else:
+        offs = 0
+        if sum(headland_prep) < new_ww:
+            offs += new_ww - sum(headland_prep)
 
-    inner_headland_rings = track_system.headlands[-1]  # TODO make this support multi part fields
-    inner_headland_poly = Polygon(inner_headland_rings[0], inner_headland_rings[1:])
-    inner_border = inner_headland_poly.buffer(offs * -1, resolution=20, cap_style=2, join_style=2)
+        rest = (sum(headland_prep)) % new_ww
+        if rest > 0 and sum(headland_prep) > (new_ww):
+            snip = headland_prep.pop()
+            temp = snip + (new_ww - rest)
+            if temp > new_ww / 2:
+                offs = new_ww / 2
+            else:
+                offs = temp
+        outer_headland_rings = track_system.headlands[0]  # TODO make this support multi part fields
+        outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
+        inner_border = outer_headland_poly.buffer((sum(headland_prep[1:]) + offs) * -1, resolution=20, cap_style=2, join_style=2)
 
     if isinstance(inner_border, Polygon):
         inner_border = MultiPolygon([inner_border])
-
     return inner_border
 
 
@@ -681,6 +701,7 @@ def working_corridor_of_ab_line(
         ab_line: LineString,
         working_width: float,
         border_poly: Polygon,
+        turning_headland: LinearRing,
         cutout_polys: List[Polygon] | None,
         start_point: Point | None = None) -> Polygon | None:
     """
@@ -755,31 +776,133 @@ def working_corridor_of_ab_line(
         return None
 
 
+# still needs some thought, if I want to return to that later.
 def get_corridor_line(
-        ab_line: LineString,
-        working_width: float,
-        inner_border: LinearRing) -> LineString:
+    ab_line: LineString,
+    working_width: float,
+    turning_headland: LinearRing,
+    inner_border: LinearRing | Polygon,
+    implement_working_offset: float = 0.0
+) -> LineString:
+    """Returns the working corridor line of an ab line within a turning headland.
+
+    Calculates the working corridor line. This respects the working width and the turning headland geometry.
     """
-    Returns the working corridor line of an ab line within an inner border.
-    """
+    headland_poly = Polygon(turning_headland)
+    min_width = 0.0001
+    half_width = working_width / 2.0 - min_width
+    inner_border_poly = Polygon(inner_border)
 
-    if ab_line is None:
-        return None
+    def get_intersection_line_savely(line: LineString, polygon: Polygon) -> LineString | None:
+        """Gets the intersection between a line and a polygon and ensure it returns a LineString."""
+        intersection = line.intersection(polygon, grid_size=0)
+        if isinstance(intersection, MultiLineString):
+            for i in range(len(intersection.geoms)):
+                # For some reason, sometimes line geometries with length of about 10^-10 are created
+                if intersection.geoms[i].length > 0.1:
+                    return intersection.geoms[i]
+        elif isinstance(intersection, LineString):
+            return intersection
+        elif isinstance(intersection, GeometryCollection):
+            # I can't believe I have to do this, but intersection at hole produced this for no discernable reason
+            for geom in intersection.geoms:
+                if isinstance(geom, LineString) and geom.length > 0.1:
+                    return geom
+        else:
+            return None
 
-    corridor_poly = working_corridor_of_ab_line(
-        ab_line,
-        working_width,
-        Polygon(inner_border),
-        []
-    )
+    # Extend AB line to the turning headland
+    # But at first handle the case, where the turning headland is at a cutout
 
-    if corridor_poly is None:
-        return ab_line
-    corridor_line = gt.extend_line_in_bounds(
-        ab_line,
-        corridor_poly
-    )
-    corridor_line = corridor_line.intersection(corridor_poly)
+    extended = get_intersection_line_savely(ab_line, headland_poly)
+    if extended is None or extended.is_empty:
+        extended = gt.extend_line_in_bounds(ab_line, inner_border_poly, inner_border.length)
+        extended = get_intersection_line_savely(extended, inner_border_poly)
+    else:
+        extended = gt.extend_line_in_bounds(ab_line, headland_poly, headland_poly.length)
+        extended = get_intersection_line_savely(extended, headland_poly)
+    if extended is None or extended.is_empty:
+        # this can happen when we are working an ab line which only has working area inside the inner_border
+        extended = ab_line
+    # Create left/right offsets and clip to headland
+    left_offset = extended.offset_curve(half_width)
+    right_offset = extended.offset_curve(-half_width)
+
+    left_clipped = left_offset.intersection(inner_border_poly)
+    right_clipped = right_offset.intersection(inner_border_poly)
+    middle_clipped = extended.intersection(inner_border_poly)
+
+    def fallback_line(offset_line: LineString) -> LineString:
+        """Handels the case where an offset line is completely outside the inner border and thus the intersection is empty.
+
+        This basically handels the edge of the field. Using nearest points is a bit dodgy but it works. Could lead to unnecessary
+        hooks.
+        """
+        p1, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[0])
+        p2, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[-1])
+        if p1.distance(p2) < 0.01:
+            # trick to avoid errors when both points are the same
+            p1 = extended.boundary.geoms[-1]
+            p2 = extended.boundary.geoms[0]
+        return LineString([p1, p2])
+
+    if left_clipped is None or left_clipped.is_empty:
+        left_clipped = fallback_line(left_offset)
+    if right_clipped is None or right_clipped.is_empty:
+        right_clipped = fallback_line(right_offset)
+    if middle_clipped is None or middle_clipped.is_empty:
+        middle_clipped = fallback_line(extended)
+
+    # TODO find a good check to filter unnecessary hooks at cutouts
+    def recombine_multilinestring(ml_string: MultiLineString) -> LineString:
+        new_line = []
+        for seg in ml_string.geoms:
+            if seg.length < 0.1:
+                continue
+            new_line.extend(seg.coords)
+        if len(new_line) < 2:
+            return extended.reverse()  # trick to avoid errors
+        return LineString(new_line)
+
+    if isinstance(left_clipped, MultiLineString):
+        left_clipped = recombine_multilinestring(left_clipped)
+    if isinstance(right_clipped, MultiLineString):
+        right_clipped = recombine_multilinestring(right_clipped)
+    if isinstance(middle_clipped, MultiLineString):
+        middle_clipped = recombine_multilinestring(middle_clipped)
+    # mind the working offset of the implement
+    left_clipped = gt.extend_line(left_clipped, implement_working_offset, extend_back=False)
+    right_clipped = gt.extend_line(right_clipped, implement_working_offset, extend_back=False)
+    middle_clipped = gt.extend_line(middle_clipped, implement_working_offset, extend_back=False)
+    # comment this out, when we can make sure that the driver follows the path in the right direction
+    # left_clipped = gt.substring(left_clipped, implement_working_offset, left_clipped.length)
+    # right_clipped = gt.substring(right_clipped, implement_working_offset, right_clipped.length)
+    # middle_clipped = gt.substring(middle_clipped, implement_working_offset, middle_clipped.length)
+
+    left_start = extended.project(left_clipped.boundary.geoms[0])
+    left_end = extended.project(left_clipped.boundary.geoms[-1])
+    if left_end <= left_start:
+        left_start, left_end = left_end, left_start
+
+    right_start = extended.project(right_clipped.boundary.geoms[0])
+    right_end = extended.project(right_clipped.boundary.geoms[-1])
+    if right_end <= right_start:
+        right_start, right_end = right_end, right_start
+
+    middle_start = extended.project(middle_clipped.boundary.geoms[0])
+    middle_end = extended.project(middle_clipped.boundary.geoms[-1])
+    if middle_end <= middle_start:
+        middle_start, middle_end = middle_end, middle_start
+
+    valid_start = min(left_start, right_start, middle_start)
+    valid_end = max(left_end, right_end, middle_end)
+
+    # if this is the case, we couldn't find a corridor that we have to work or is smaller than 0.1
+    if valid_end <= valid_start:
+        valid_start = extended.length / 2 - 0.01
+        valid_end = extended.length / 2 + 0.01
+
+    corridor_line = gt.substring(extended, valid_start, valid_end)
     if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
-        return corridor_line
-    return ab_line
+        return remove_repeated_points(corridor_line, 0.01)
+    return None  # remove_repeated_points(ab_line, 0.01)

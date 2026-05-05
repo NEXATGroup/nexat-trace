@@ -2,7 +2,7 @@ import math
 from math import pi
 from typing import Dict, List
 
-from shapely import LinearRing, LineString, MultiPoint, Point, Polygon, STRtree
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, Polygon, STRtree
 from shapely.ops import nearest_points
 
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
@@ -109,6 +109,14 @@ def connect_ab_lines(
         from_node.intersect_secondary.position,
         to_node.intersect_secondary.position
     )
+    if isinstance(headland_segment, Point):
+        # if this happens just do a roundtrip
+        headland_segment = gt.ring_with_origin_at(headland_shape, from_node.intersect_secondary.position)
+        headland_segment = gt.substring(
+            headland_segment,
+            0,
+            headland_segment.length
+        )
 
     headland_segment_compare = gt.get_substring_on_linearring(
         headland_shape.reverse(),
@@ -569,7 +577,9 @@ def search_curve_to_headland(
     working_corridor = get_corridor_line(
         ab_line,
         route_params.working_width,
-        inner_field_border
+        headland_ring,
+        inner_field_border,
+        route_params.implement_working_offset
     )
 
     # try if simple turn fits
@@ -593,8 +603,7 @@ def search_curve_to_headland(
     valid = True
 
     curve_end_projection = working_corridor.project(Point(path.coords[0]))
-    if curve_end_projection > working_corridor.length / 2.0:
-        curve_end_projection = working_corridor.length - curve_end_projection
+    curve_end_projection = working_corridor.length - curve_end_projection
 
     # is the end of the path within a given range of the start of the working corridor?
     corridor_error_detected: bool = not metrics or metrics.working_corridor_error > 0
@@ -607,7 +616,7 @@ def search_curve_to_headland(
                 path = insert_hook_stops_to_headland(
                     path,
                     working_corridor,
-                    field_border,
+                    headland_ring,
                     route_params
                 )
                 curve_type = CurveType.HOOK
@@ -647,7 +656,9 @@ def search_curve_to_ab(
     working_corridor = get_corridor_line(
         ab_line,
         route_params.working_width,
-        inner_field_border
+        headland_ring,
+        inner_field_border,
+        route_params.implement_working_offset
     )
 
     # try if simple turn fits
@@ -671,8 +682,6 @@ def search_curve_to_ab(
     valid = True
 
     curve_end_projection = working_corridor.project(Point(path.coords[-1]))
-    if curve_end_projection > working_corridor.length / 2.0:
-        curve_end_projection = working_corridor.length - curve_end_projection
 
     # is the end of the curve within a given range of the start of the working corridor?
     corridor_error_detected: bool = not metrics or metrics.working_corridor_error > 0
@@ -686,7 +695,7 @@ def search_curve_to_ab(
                 path = insert_hook_stops_to_ab(
                     path,
                     working_corridor,
-                    field_border,
+                    headland_ring,
                     route_params
                 )
                 curve_type = CurveType.HOOK
@@ -936,6 +945,15 @@ def trace_curve(
             cut_start,
             cut_end
         )
+        if isinstance(headland_segment, Point):
+            # if this happens just do a roundtrip
+            headland_segment = gt.ring_with_origin_at(headland_shape, from_node.intersect_secondary.position)
+            headland_segment = gt.substring(
+                headland_segment,
+                0,
+                headland_segment.length
+            )
+
         is_at_cutout = from_node != 0 and to_index != 0
         curve = search_curve_to_ab(
             ab_segment,
@@ -1018,42 +1036,43 @@ def trace_curve(
 def insert_hook_stops_to_ab(
         curve: LineString,
         working_corridor,
-        field_border,
+        turning_headland,
         route_params: RoutePlanningConfig):
     """
     Inserts the needed points in a curve from a headland segment onto an ab line working corridor for a hook curve.
     """
 
     points = [Point(c) for c in curve.coords]
-    curve_start = points[0]
     curve_end = points[-1]
-    # orient the working_corridor the right way
-    end_1 = Point(working_corridor.coords[0])
-    end_2 = Point(working_corridor.coords[-1])
-    working_corridor_oriented = LineString(working_corridor)
-    if end_1.distance(curve_start) > end_2.distance(curve_start):
-        working_corridor_oriented = working_corridor_oriented.reverse()
 
-    curve_end_projection = working_corridor_oriented.reverse().project(
+    curve_end_projection = working_corridor.reverse().project(
         curve_end,
     )
-    if working_corridor_oriented.length - curve_end_projection > route_params.corridor_threshold:
-        extension_point = working_corridor_oriented.interpolate(
-            working_corridor_oriented.project(
-                curve_end
-            ) + route_params.direction_change_extension_distance
+    if working_corridor.length - curve_end_projection > route_params.corridor_threshold:
+        extension_point = working_corridor.interpolate(
+            working_corridor.project(curve_end) + route_params.direction_change_extension_distance
         )
-        extension_point = working_corridor.interpolate(working_corridor.project(extension_point))
         points.append(extension_point)
 
         if route_params.working_corridor_extension:
-            working_corridor_oriented = gt.extend_line_in_bounds(
-                working_corridor_oriented,
-                field_border,
-                route_params.direction_change_extension_distance,
-                extend_front = False,
-                extend_back = True
-            )
+            if working_corridor is None or not isinstance(working_corridor, LineString) or working_corridor.length < 0.01:
+                if route_params.debug_prints:
+                    print("Working corridor is very short, extension failed")
+                return curve
+            else:
+                working_corridor = gt.extend_line_in_bounds(
+                    working_corridor,
+                    Polygon(turning_headland),
+                    route_params.direction_change_extension_distance,
+                    extend_front=False,
+                    extend_back=True,
+                )
+        working_corridor_oriented = working_corridor.intersection(Polygon(turning_headland))
+        if isinstance(working_corridor_oriented, MultiLineString):
+            for line in working_corridor_oriented.geoms:
+                if line.length > 0.1:
+                    working_corridor_oriented = line
+                    break
 
         insert_point = Point(working_corridor_oriented.coords[0])
         points.append(insert_point)
@@ -1065,7 +1084,7 @@ def insert_hook_stops_to_ab(
 def insert_hook_stops_to_headland(
         curve: LineString,
         working_corridor,
-        field_border,
+        turning_headland,
         route_params: RoutePlanningConfig):
     """
     Inserts the needed points in a curve from an ab line working corridor onto the headland for a hook curve.
@@ -1073,36 +1092,32 @@ def insert_hook_stops_to_headland(
     points = [Point(c) for c in curve.coords]
     curve_start = points[0]
 
-    # orient the working_corridor the right way
-    end_1 = Point(working_corridor.coords[0])
-    end_2 = Point(working_corridor.coords[-1])
-    working_corridor_oriented = LineString(working_corridor)
-    if end_1.distance(curve_start) < end_2.distance(curve_start):
-        working_corridor_oriented = working_corridor_oriented.reverse()
-
-    curve_start_projection = working_corridor_oriented.project(
+    curve_start_projection = working_corridor.project(
         curve_start,
     )
 
-    if working_corridor_oriented.length - curve_start_projection > route_params.corridor_threshold:
-        backup_point = working_corridor_oriented.interpolate(
-            working_corridor_oriented.project(
-                curve_start
-            ) - route_params.direction_change_extension_distance
-        )
-        backup_point = working_corridor_oriented.interpolate(working_corridor_oriented.project(backup_point))
+    if working_corridor.length - curve_start_projection > route_params.corridor_threshold:
+        backup_point = working_corridor.interpolate(working_corridor.project(curve_start))
         points.insert(0, backup_point)
-
-        if route_params.working_corridor_extension:
-            working_corridor_oriented = gt.extend_line_in_bounds(
-                working_corridor_oriented,
-                field_border,
+        if working_corridor is None or not isinstance(working_corridor, LineString) or working_corridor.length < 0.01:
+            if route_params.debug_prints:
+                print("Working corridor is very short, extension failed")
+            return curve
+        else:
+            working_corridor = gt.extend_line_in_bounds(
+                working_corridor,
+                Polygon(turning_headland),
                 route_params.direction_change_extension_distance,
-                extend_front = True,
-                extend_back = False
+                extend_front=True,
+                extend_back=False,
             )
-
-        corridor_end = Point(working_corridor_oriented.coords[-1])
+        working_corridor = working_corridor.intersection(Polygon(turning_headland))
+        if isinstance(working_corridor, MultiLineString):
+            for line in working_corridor.geoms:
+                if line.length > 0.1:
+                    working_corridor = line
+                    break
+        corridor_end = Point(working_corridor.coords[-1])
         points.insert(0, corridor_end)
         return LineString(points)
 
