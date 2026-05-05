@@ -10,7 +10,6 @@ from nexat_trace.planning import curve_calculation
 from nexat_trace.planning.route import Route
 from nexat_trace.shared.config import PostSteps
 from nexat_trace.util import geom_tools
-from debug_visuals import Visualizer
 
 """
 This module defines post processing steps for routes
