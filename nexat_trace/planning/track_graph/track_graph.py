@@ -18,6 +18,7 @@ from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
 from nexat_trace.util.geom_tools import angle_between_lines
+from debug_visuals import Visualizer
 
 
 class TrackGraph:
@@ -247,17 +248,14 @@ class TrackGraph:
         if start is not None and not self.inner_border.contains(start):
             start = None
 
+        working_area = self.inner_border
+
         if start is None:
             # build up grid of linestrings that mark the lines that need to be skipped
             subsets = []
             for i in range(skip_ab_lines):
                 offset = self.route_params._track_width * i
                 subsets.append(self._get_mask_with_offset(skip_ab_lines, offset))
-
-            multi_ab = MultiLineString(self.ab_lines)
-            working_area = multi_ab.buffer(
-                (self.route_params._track_width / 2.0) + 0.01, cap_style=2, join_style=2, mitre_limit=0.01
-            )
 
             optimal_index = 0
             max_coverage = 0.0
@@ -282,8 +280,28 @@ class TrackGraph:
             lines = [node.get_ab_line() for node in mask]
             mask = MultiLineString(lines)
 
+        def rebuild_line_inside_field(line: LineString) -> LineString:
+            intersection = line.intersection(Polygon(self.field_border), grid_size=0)
+            if isinstance(intersection, LineString):
+                return intersection
+            elif isinstance(intersection, MultiLineString):
+                # make sure thats not an abitrary split of the line
+                for i in range(len(intersection.geoms) - 1):
+                    if intersection.geoms[i].distance(intersection.geoms[i + 1]) < 0.0001:
+                        index = i + 1
+                    else:
+                        break
+                return LineString([intersection.geoms[0].coords[0], intersection.geoms[index].coords[-1]])
+            elif isinstance(intersection, GeometryCollection):
+                lines = [g for g in intersection.geoms if isinstance(g, LineString)]
+                if not lines:
+                    raise GraphConstructionError("Could not extend line to field border")
+                return LineString([lines[0].coords[0], lines[-1].coords[-1]])
+
         #  check if we need irregular ab lines to cover the whole area
-        selected_lines = MultiLineString(subset_lines[optimal_index])
+        selected_lines = mask
+        selected_lines = [gt.extend_line(line, 1000000.0) for line in selected_lines.geoms]
+        selected_lines = [rebuild_line_inside_field(line) for line in selected_lines]
         subset_coverage = selected_lines.buffer(
             working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
         )
@@ -297,23 +315,15 @@ class TrackGraph:
                 centroid = geom.centroid
                 distance = extended_first.distance(centroid)
 
-                # determine sign: which side of the line is the centroid on?
-                x1, y1 = extended_first.coords[0]
-                x2, y2 = extended_first.coords[-1]
-                cross = (x2 - x1) * (centroid.y - y1) - (y2 - y1) * (centroid.x - x1)
-                if cross < 0:
+                test_dist = extended_first.parallel_offset(1).distance(centroid)
+                if test_dist > extended_first.distance(centroid):
                     distance = -distance
-
+                distance = round(distance / self.route_params._track_width) * self.route_params._track_width
                 parallel = extended_first.parallel_offset(distance)
-                parallel = parallel.intersection(self.field_border)
-                if isinstance(parallel, MultiLineString):
-                    parallel = LineString([parallel.geoms[0].coords[0], parallel.geoms[0].coords[-1]])
-                elif isinstance(parallel, GeometryCollection):
-                    lines = [geom for geom in parallel.geoms if isinstance(geom, LineString)]
-                    parallel = LineString([lines[0].coords[0], lines[-1].coords[-1]])
+                parallel = rebuild_line_inside_field(parallel)
                 selected_lines = selected_lines.union(parallel)
-        nodes_indexes = self.primary_node_tree.query(mask, "dwithin", 1.0)
-        nodes = [self.primary_nodes[i] for i in nodes_indexes]
+        nodes_indexes = self.primary_node_tree.query(selected_lines, "dwithin", 1.0)
+        nodes = [self.primary_nodes[i] for i in set(nodes_indexes)]
         nodes.sort(key=lambda node: node.index)
 
         return nodes
