@@ -243,8 +243,13 @@ class TrackGraph:
         skip_ab_lines = round(working_width // self.route_params._track_width)
         if skip_ab_lines == 0:
             return self.primary_nodes
+
+        multi_ab = MultiLineString(self.ab_lines)
+        working_area = multi_ab.buffer(
+            (self.route_params._track_width / 2.0) + 0.01, cap_style=2, join_style=2, mitre_limit=0.01
+        )
         nodes: List[PrimaryTrackGraphNode] = []
-        if start is not None and not self.inner_border.contains(start):
+        if start is not None and not self.field_border.contains(start):
             start = None
 
         if start is None:
@@ -253,11 +258,6 @@ class TrackGraph:
             for i in range(skip_ab_lines):
                 offset = self.route_params._track_width * i
                 subsets.append(self._get_mask_with_offset(skip_ab_lines, offset))
-
-            multi_ab = MultiLineString(self.ab_lines)
-            working_area = multi_ab.buffer(
-                (self.route_params._track_width / 2.0) + 0.01, cap_style=2, join_style=2, mitre_limit=0.01
-            )
 
             optimal_index = 0
             max_coverage = 0.0
@@ -283,7 +283,7 @@ class TrackGraph:
             mask = MultiLineString(lines)
 
         #  check if we need irregular ab lines to cover the whole area
-        selected_lines = MultiLineString(subset_lines[optimal_index])
+        selected_lines = mask
         subset_coverage = selected_lines.buffer(
             working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
         )
