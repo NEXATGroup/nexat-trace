@@ -16,7 +16,11 @@ from nexat_trace.shared.exceptions import GraphConstructionError
 from nexat_trace.shared.weights import Weights
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
-from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
+from nexat_trace.util.field_conversion import (
+    get_ab_lines_on_path,
+    get_headland_index_of_path_on_track_system,
+    get_working_width_of_path_on_track_system,
+)
 from nexat_trace.util.geom_tools import angle_between_lines
 
 
@@ -315,6 +319,27 @@ class TrackGraph:
         nodes_indexes = self.primary_node_tree.query(mask, "dwithin", 1.0)
         nodes = [self.primary_nodes[i] for i in nodes_indexes]
         nodes.sort(key=lambda node: node.index)
+
+        return nodes
+
+    def _get_working_width_subset_from_paths(
+            self,
+            driven_paths: List[MultiLineString],
+            working_width: float,
+            start: Point | int = None) -> List[PrimaryTrackGraphNode]:
+        """
+        Returns a subset of primary nodes depending on the first path, the working_width and optional start.
+        """
+        # TODO implement supoort for multiple paths
+
+        path_working_width = get_working_width_of_path_on_track_system(driven_paths[0], self.track_system)
+
+        if working_width != round(path_working_width, 1):
+            return self._get_working_width_subset(working_width, start)
+
+        all_nodes = self.get_route_nodes_from_path(driven_paths[0])
+
+        nodes = [node for node in all_nodes if isinstance(node, PrimaryTrackGraphNode)]
 
         return nodes
 
@@ -1044,8 +1069,13 @@ class TrackGraph:
         start_line = ab_line_set[0]
         first_line_index = 0
 
-        if (not did_cut_path_to_first_node
-                and start_node.position.distance(start_line.centroid) < Point(cut_path.coords[1]).distance(start_line.centroid)):
+        look_ahead = min(2, len(cut_path.coords) - 1)
+        check_path = LineString(cut_path.coords[0:look_ahead + 1])
+        check_points = [check_path.interpolate(i * 0.2, True) for i in range(1, 11)]
+        if not did_cut_path_to_first_node and all(
+            round(start_line.distance(check_points[k]), 5) > round(start_line.distance(Point(cut_path.coords[0])), 5)
+            for k in range(0, look_ahead + 1)
+        ):
             # does route start with a turn to headland or traversal of ab line?
             # start with turn to headland
             first_line_index = 1

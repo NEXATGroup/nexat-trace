@@ -278,10 +278,17 @@ class NetGraph:
         """
         Sets the working subset depending on working width and optional starting point.
         """
-        self.working_subset_track_nodes = self.track_graph._get_working_width_subset(
-            route_params.working_width,
-            route_params.working_mask_start
-        )
+        if len(route_params.driven_paths) == 0:
+            self.working_subset_track_nodes = self.track_graph._get_working_width_subset(
+                route_params.working_width,
+                route_params.working_mask_start
+            )
+        else:
+            self.working_subset_track_nodes = self.track_graph._get_working_width_subset_from_paths(
+                route_params.driven_paths,
+                route_params.working_width,
+                route_params.working_mask_start
+            )
         self.working_subset_indexes = [node.index for node in self.working_subset_track_nodes]
         self.fill_locations()
 
