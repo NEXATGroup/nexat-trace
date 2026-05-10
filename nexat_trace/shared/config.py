@@ -56,6 +56,13 @@ class RoutePlanningConfig:
         When to fill working corridors completely
     - corridor_threshold:
         Threshold in meters above which a working corridor end is considered problematic during curve planning
+    - last_driven_headland_index:
+        If not None, overrides the inner border calculation to simply use the the last driven headland plus working_width/2 as
+        the inner border. If None determines the inner automatically using the working width and ensuring a coverage of the
+        headland area.
+    - implement_working_offset:
+        Distance in meters behind the machine center, where the implement is working also known as boom. This is used to calculate
+        the working corridor and relevant for the working corridor error.
     - corridor_curve:
         Determines how curves are driven if there is a problematic working corridor
     - loop_curve_initial_extend:
@@ -196,6 +203,11 @@ class RoutePlanningConfig:
         self.corridor_strategy: CorridorStrategy = CorridorStrategy.DRIVE_ONLY_OUTER_HEADLAND
         # Threshold in meters above which a working corridor end is considered problematic during curve planning
         self.corridor_threshold: float = 1.0
+        # Headland index of the last driven headland to work the headland area.
+        self.last_driven_headland_index: int | None = None
+        # Offset of the implement from the center of the machine in m. This is used to calculate the working corridor and relevant
+        # for the working corridor error.
+        self.implement_working_offset: float = 0.0
         # determines how curves are driven if there is a problematic working corridor
         self.corridor_curve: CurveType = CurveType.HOOK
 
@@ -259,7 +271,7 @@ class RoutePlanningConfig:
         self.vehicle_speed_curve = 2.08  # m/s -> 7,5km/h
         self.speed_curve_angle_threshold = 0.0001
 
-        self.direction_change_extension_distance = 10.0  # m
+        self.direction_change_extension_distance = 5.0  # m
         self.working_corridor_extension = False
         self.heuristic_corridor_angle = 0.0  # fraction of π rad (0.5π = 90°)
 
@@ -280,6 +292,8 @@ class RoutePlanningConfig:
         """
         new = RoutePlanningConfig()
         new.corridor_threshold = self.corridor_threshold
+        new.last_driven_headland_index = self.last_driven_headland_index
+        new.implement_working_offset = self.implement_working_offset
         new.corridor_strategy = self.corridor_strategy
         new.max_block_size = self.max_block_size
         new.min_block_size = self.min_block_size
@@ -331,6 +345,8 @@ class RoutePlanningConfig:
             f"  corridor_strategy={self.corridor_strategy},\n"
             f"  corridor_curve={self.corridor_curve},\n"
             f"  corridor_threshold={self.corridor_threshold},\n"
+            f"  last_driven_headland_index={self.last_driven_headland_index},\n"
+            f"  implement_working_offset={self.implement_working_offset},\n"
             f"  override_headland_index={self.override_headland_index},\n"
             f"  fully_circle_cutouts={self.fully_circle_cutouts},\n"
             f"  round_trip_route={self.round_trip_route},\n"
@@ -416,6 +432,8 @@ class RoutePlanningConfig:
         new.corridor_strategy = CorridorStrategy[data["corridor_strategy"]]
         new.corridor_curve = CurveType[data["corridor_curve"]]
         new.corridor_threshold = data["corridor_threshold"]
+        new.last_driven_headland_index = data["last_driven_headland_index"]
+        new.implement_working_offset = data["implement_working_offset"]
         new.override_headland_index = data["override_headland_index"]
         new.fully_circle_cutouts = data["fully_circle_cutouts"]
         new.round_trip_route = data["round_trip_route"]

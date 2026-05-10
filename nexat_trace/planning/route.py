@@ -1,7 +1,7 @@
 from math import pi
 from typing import Dict, List
 
-from shapely import LinearRing, LineString, MultiLineString, Point
+from shapely import LinearRing, LineString, MultiLineString, MultiPolygon, Point, Polygon
 from shapely.ops import substring
 
 from nexat_trace.planning import curve_calculation
@@ -46,7 +46,8 @@ class Route:
             metrics: EdgeMetrics,
             target_headlands: List[LinearRing],
             field_border: LinearRing,
-            inner_border: LinearRing,
+            inner_border: Polygon,
+            full_inner_border: MultiPolygon,
             ab_lines: List[LineString],
             route_params: RoutePlanningConfig,
             is_point_navigation: bool = False,
@@ -67,6 +68,7 @@ class Route:
         self._target_headlands = target_headlands
         self._field_border = field_border
         self._inner_border = inner_border
+        self._full_inner_border = full_inner_border
         self._ab_lines = ab_lines
         self._line = None
         self._multi_line = None
@@ -433,7 +435,7 @@ class Route:
         """Checks if path is only segmented at direction changes."""
 
         for i in range(0, len(segments) - 1):
-            is_same_start_stop = segments[i][-1] == segments[i + 1][0]
+            is_same_start_stop = segments[i][-1].distance(segments[i + 1][0]) < 1e-9
             is_direction_change = abs(
                 gt.angle_between_lines(LineString(segments[i][-2:]), LineString(segments[i + 1][:2]))
                 ) > 0.9 * pi

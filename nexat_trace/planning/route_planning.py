@@ -196,7 +196,7 @@ def get_route(routing,
     inner_border = None
     if isinstance(track_graph.inner_border, MultiPolygon):
         # TODO implement actual multi inner border support
-        inner_border = list(track_graph.inner_border.geoms)[0].exterior
+        inner_border = list(track_graph.inner_border.geoms)[0]
     else:
         raise TypeError("Inner border in track graph was not MultiPolygon")
 
@@ -207,6 +207,7 @@ def get_route(routing,
         track_graph.target_headlands,
         field_border,
         inner_border,
+        track_graph.inner_border,
         ab_lines,
         route_params,
         progress_out = progress_out
@@ -519,7 +520,7 @@ def navigate_from_to(
 
     track_graph = net_graph.track_graph
     # TODO implement actual multi inner border support
-    inner_border = list(track_graph.inner_border.geoms)[0].exterior
+    inner_border = list(track_graph.inner_border.geoms)[0]
 
     start_heading_point = None
     target_heading_point = None
@@ -553,6 +554,7 @@ def navigate_from_to(
             track_graph.target_headlands,
             track_graph.field_border,
             inner_border,
+            track_graph.inner_border,
             track_graph.ab_lines,
             route_params,
             True
@@ -703,6 +705,7 @@ def navigate_from_to(
             track_graph.target_headlands,
             track_graph.field_border,
             inner_border,
+            track_graph.inner_border,
             track_graph.ab_lines,
             route_params,
             True
