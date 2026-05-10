@@ -29,3 +29,9 @@ class PlanningMsg(Enum):
 
     # If there is a part of the path that is less than working width / 2 from the field border
     COLLISION = 7
+
+    # Path segmentation when there shouldn't be one, Path will be trimmed
+    UNEXPECTED_SEGMENTATION = 8
+
+    # Path segmentation without direction change or start and end of segments are not the same
+    NO_DIRECTION_CHANGE_AT_SEGMENTATION = 9

@@ -1,7 +1,7 @@
 from math import pi
 from typing import List, Tuple
 
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
+from shapely import GeometryCollection, LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
 from shapely.ops import substring
 from shapely.strtree import STRtree
 
@@ -244,6 +244,8 @@ class TrackGraph:
         if skip_ab_lines == 0:
             return self.primary_nodes
         nodes: List[PrimaryTrackGraphNode] = []
+        if start is not None and not self.inner_border.contains(start):
+            start = None
 
         if start is None:
             # build up grid of linestrings that mark the lines that need to be skipped
@@ -280,6 +282,36 @@ class TrackGraph:
             lines = [node.get_ab_line() for node in mask]
             mask = MultiLineString(lines)
 
+        #  check if we need irregular ab lines to cover the whole area
+        selected_lines = MultiLineString(subset_lines[optimal_index])
+        subset_coverage = selected_lines.buffer(
+            working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
+        )
+        uncovered = working_area.difference(subset_coverage)
+        first_line = selected_lines.geoms[0]
+        extended_first = gt.extend_line(first_line, 1000000.0)
+
+        for geom in uncovered.geoms:
+            # this is a dodgy check
+            if isinstance(geom, Polygon) and geom.area > 0.1:
+                centroid = geom.centroid
+                distance = extended_first.distance(centroid)
+
+                # determine sign: which side of the line is the centroid on?
+                x1, y1 = extended_first.coords[0]
+                x2, y2 = extended_first.coords[-1]
+                cross = (x2 - x1) * (centroid.y - y1) - (y2 - y1) * (centroid.x - x1)
+                if cross < 0:
+                    distance = -distance
+
+                parallel = extended_first.parallel_offset(distance)
+                parallel = parallel.intersection(self.field_border)
+                if isinstance(parallel, MultiLineString):
+                    parallel = LineString([parallel.geoms[0].coords[0], parallel.geoms[0].coords[-1]])
+                elif isinstance(parallel, GeometryCollection):
+                    lines = [geom for geom in parallel.geoms if isinstance(geom, LineString)]
+                    parallel = LineString([lines[0].coords[0], lines[-1].coords[-1]])
+                selected_lines = selected_lines.union(parallel)
         nodes_indexes = self.primary_node_tree.query(mask, "dwithin", 1.0)
         nodes = [self.primary_nodes[i] for i in nodes_indexes]
         nodes.sort(key=lambda node: node.index)
@@ -349,8 +381,15 @@ class TrackGraph:
             "dwithin",
             (self.route_params._track_width / 2.0) - 0.01
         )
-        subset = [self.primary_nodes[i] for i in indexes]
-
+        subset = [
+            self.primary_nodes[i]
+            for i in indexes
+            if self.inner_border.intersects(
+                self.primary_nodes[i]
+                .get_ab_line()
+                .buffer(self.route_params.working_width / 2, cap_style="flat", join_style="mitre")
+            )
+        ]
         return subset
 
     def _get_mask_with_offset_multi_vertex_ab_lines(
@@ -394,6 +433,29 @@ class TrackGraph:
 
             if multi_keep_lines.intersects(inner_buffer):
                 continue
+            # make sure that if the distance is smaller than min distance, it is in forward direction
+            # this check probably might need work still
+            actual_distance = multi_keep_lines.distance(line)
+            if actual_distance < min_distance:
+                nearest = min(keep_lines, key=lambda keep_line: keep_line.distance(line))
+
+                # Get nearest points on each line
+                np1, np2 = gt.nearest_points(nearest, line)
+
+                # Extract local tangent segments centered on each nearest point
+                # Using substring avoids the vertex ambiguity: if the nearest point
+                # is exactly on a vertex, the segment spans it and still has direction
+                epsilon = 0.5
+                t1 = nearest.project(np1)
+                t2 = line.project(np2)
+                seg1 = substring(nearest, max(0, t1 - epsilon), min(nearest.length, t1 + epsilon))
+                seg2 = substring(line, max(0, t2 - epsilon), min(line.length, t2 + epsilon))
+
+                if abs(gt.angle_between_lines(seg1, seg2)) < pi / 36:
+                    nearest_extend = gt.extend_line(nearest, actual_distance)
+                    nearest_extended_buffer = nearest_extend.buffer(self.route_params._track_width / 2, 8, "flat", "mitre")
+                    if not nearest_extended_buffer.intersects(line):
+                        continue
 
             keep_lines.append(line)
 
@@ -403,7 +465,15 @@ class TrackGraph:
             "dwithin",
             (self.route_params._track_width / 2.0) - 0.01
         )
-        subset = [self.primary_nodes[i] for i in indexes]
+        subset = [
+            self.primary_nodes[i]
+            for i in indexes
+            if self.inner_border.intersects(
+                self.primary_nodes[i]
+                .get_ab_line()
+                .buffer(self.route_params.working_width / 2, cap_style="flat", join_style="mitre")
+            )
+        ]
 
         return subset
 
@@ -952,6 +1022,13 @@ class TrackGraph:
         primary_node_multipoint = MultiPoint([node.position for node in self.primary_nodes])
         first_point_index = 0
         while not Point(cut_path_points_coords[first_point_index]).dwithin(primary_node_multipoint, 5.0):
+            if first_point_index >= len(cut_path_points_coords):
+                if self.route_params.debug_prints:
+                    print(
+                        f"Cutting path to first node, point {cut_path_points_coords[first_point_index]} is not within 5.0 of any"
+                        + " primary node"
+                    )
+                break
             first_point_index += 1
 
         if first_point_index > 0:

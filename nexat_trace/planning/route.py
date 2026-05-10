@@ -1,7 +1,7 @@
 from math import pi
 from typing import Dict, List
 
-from shapely import LinearRing, LineString, MultiLineString, Point
+from shapely import LinearRing, LineString, MultiLineString, MultiPolygon, Point, Polygon
 from shapely.ops import substring
 
 from nexat_trace.planning import curve_calculation
@@ -9,7 +9,7 @@ from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.planning.track_graph.primary_track_graph_node import PrimaryTrackGraphNode
 from nexat_trace.planning.track_graph.track_graph_node import TrackGraphNode
 from nexat_trace.shared import progress
-from nexat_trace.shared.config import CurveType, RoutePlanningConfig
+from nexat_trace.shared.config import CorridorStrategy, CurveType, RoutePlanningConfig
 from nexat_trace.shared.curve import Curve
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
@@ -46,7 +46,8 @@ class Route:
             metrics: EdgeMetrics,
             target_headlands: List[LinearRing],
             field_border: LinearRing,
-            inner_border: LinearRing,
+            inner_border: Polygon,
+            full_inner_border: MultiPolygon,
             ab_lines: List[LineString],
             route_params: RoutePlanningConfig,
             is_point_navigation: bool = False,
@@ -62,10 +63,12 @@ class Route:
         self._metrics: EdgeMetrics = metrics
         self.turns: Dict = None
         self.distance_on_headland: float = None
+        self.distance_curves: float = None
 
         self._target_headlands = target_headlands
         self._field_border = field_border
         self._inner_border = inner_border
+        self._full_inner_border = full_inner_border
         self._ab_lines = ab_lines
         self._line = None
         self._multi_line = None
@@ -215,6 +218,7 @@ class Route:
 
         multi_headland = MultiLineString(self._target_headlands)
         self.distance_on_headland = 0.0
+        self.distance_curves = 0.0
 
         mixed_path: List[TrackGraphNode | Point] = []
         self._path = []
@@ -232,6 +236,9 @@ class Route:
             intersection = buffered_curve.intersection(multi_headland)
             if isinstance(intersection, (LineString, MultiLineString)):
                 self.distance_on_headland += intersection.length
+                self.distance_curves += curve.path.length - intersection.length
+            else:
+                self.distance_curves += curve.path.length
 
         parts = self._split_parts()
 
@@ -365,6 +372,22 @@ class Route:
             self._segmented_path.append(
                 [Point(coord) for coord in segment.coords]
             )
+        if (
+            self._route_params.disable_pi_curves
+            and self._route_params.corridor_strategy == CorridorStrategy.DRIVE_NONE
+            and len(self._segmented_path) > 1
+        ):
+            self._line = LineString()
+            self._segmented_path = []
+            self._multi_line = MultiLineString()
+            self._metrics.distance = 0
+            self._metrics.time = 0
+            self.planning_messages.append(PlanningMsg.UNEXPECTED_SEGMENTATION)
+            if self._route_params.debug_prints:
+                print("Got a segmented path, when we shouldn't")
+
+        if len(self._segmented_path) > 1:
+            self.check_segment_direction_change(self._segmented_path)
 
         self._calculate_area()
 
@@ -407,6 +430,26 @@ class Route:
         if self._covered_area is None:
             self._calculate_area()
         return self._covered_area
+
+    def check_segment_direction_change(self, segments: List[List[Point]]):
+        """Checks if path is only segmented at direction changes."""
+
+        for i in range(0, len(segments) - 1):
+            is_same_start_stop = segments[i][-1].distance(segments[i + 1][0]) < 1e-9
+            is_direction_change = abs(
+                gt.angle_between_lines(LineString(segments[i][-2:]), LineString(segments[i + 1][:2]))
+                ) > 0.9 * pi
+            if not is_same_start_stop or not is_direction_change:
+                self.planning_messages.append(PlanningMsg.NO_DIRECTION_CHANGE_AT_SEGMENTATION)
+                self._line = LineString()
+                self._segmented_path = []
+                self._multi_line = MultiLineString()
+                self._metrics.distance = 0
+                self._metrics.time = 0
+                if self._route_params.debug_prints:
+                    print("Got a segmentation without direction change or not at the same point")
+                return
+        return
 
 
 def _calculate_drive_time(
