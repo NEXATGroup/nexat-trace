@@ -250,6 +250,10 @@ class Route:
             to_node = part[-1]
             curve = None
 
+            from_node_suspects = [102]
+            if from_node.index in from_node_suspects:
+                print("suspect from node")
+
             if (isinstance(from_node, PrimaryTrackGraphNode) and
                     isinstance(to_node, PrimaryTrackGraphNode)):
                 # plan u turn

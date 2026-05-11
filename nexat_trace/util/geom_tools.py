@@ -8,6 +8,7 @@ from numpy import typing as npt
 from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, remove_repeated_points
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, substring, unary_union
+from debug_visuals import Visualizer
 
 
 class Circle:
@@ -541,12 +542,12 @@ def dubins_between_segments(
         ipol_current = current_line_extended.interpolate(current_line_extended.project(intersection_point))
         ipol_target = target_line_extended.interpolate(target_line_extended.project(intersection_point))
 
-        if (current_line_extended.project(ipol_current)
+        if (intersection_point_line.is_empty or
+                (current_line_extended.project(ipol_current)
                 < current_line_extended.project(nearest_intersection_point_to_point)
                 and target_line_extended.project(ipol_target)
                 > target_line_extended.project(nearest_intersection_point_to_point)
-                and current_line_extended.project(ipol_current) - current_point_projection > 0
-                or intersection_point_line.is_empty):
+                and current_line_extended.project(ipol_current) - current_point_projection > 0)):
             ipol_candidates.append(
                 (
                     current_line_extended.project(ipol_current) - current_point_projection,
@@ -749,3 +750,31 @@ def union_intersecting_geoms(geometries: List[BaseGeometry]) -> List[Polygon]:
         return union_intersecting_geoms(grouped_geoms)
 
     return grouped_geoms
+
+
+def check_segmentation(path: List[Point] | LineString | List[LineString],
+                       turning_headland: LinearRing | LineString,
+                       function_string: str,
+                       geom_from: BaseGeometry | None = None,
+                       geom_to: BaseGeometry | None = None) -> bool:
+    """Checks if the given path is segmeted correclty."""
+    segments = []
+    if isinstance(path, list) and (isinstance(path[0], Tuple) or path[0].geom_type == "Point"):
+        path = LineString(path)
+        segments, _ = segment_line(path, radius_threshold=1.35)
+    elif isinstance(path, list) and path[0].geom_type == "LineString":
+        segments = path
+    elif isinstance(path, LineString):
+        segments, _ = segment_line(path)
+    for i in range(len(segments) - 1):
+        is_same_start_stop = segments[i].boundary.geoms[-1].distance(segments[i + 1].boundary.geoms[0]) < 1e-9
+        is_direction_change = abs(
+            angle_between_lines(LineString(segments[i].coords[-2:]), LineString(segments[i + 1].coords[:2]))
+            ) > 0.9 * pi
+        if not is_same_start_stop or not is_direction_change:
+            path_start_dist = path.project(segments[i].boundary.geoms[-1])
+            path_end_dist = path.project(segments[i + 1].boundary.geoms[0])
+            path_between = substring(path, path_start_dist, path_end_dist)
+            print("Segmented path is not segmented correctly")
+            return False
+    return True

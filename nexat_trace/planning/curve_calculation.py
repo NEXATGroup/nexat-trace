@@ -12,6 +12,7 @@ from nexat_trace.shared.config import CorridorStrategy, RoutePlanningConfig
 from nexat_trace.shared.curve import Curve, CurveType
 from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_corridor_line
+from debug_visuals import Visualizer
 
 """
 This module is used to compute dubins paths connecting track segments.
@@ -363,20 +364,21 @@ def trace_headland_hop(
             n1.set_secondaries([nodes[i - 1]], route_params, node_tree_1, Polygon(field_border))
             n2.set_secondaries([node], route_params, node_tree_2, Polygon(field_border))
 
+            # this is weird. Node are in there several times and not necessarily in the right order?
             nodes_cpy = nodes[from_index:i + 1] + [n1, n2] + nodes[i:to_index + 1]
             new_from_index = 0
             new_to_index = i + 1 - from_index
 
             part1 = connect_ab_lines(
-                nodes_cpy,
-                route_params,
-                new_from_index,
-                new_to_index,
-                headlands,
-                field_border,
-                inner_field_border,
-                False,
-                circled_cutouts
+                nodes=nodes_cpy,
+                route_params=route_params,
+                from_index=new_from_index,
+                to_index=new_to_index,
+                headlands=headlands,
+                field_border=field_border,
+                inner_field_border=inner_field_border,
+                allow_headland_hop=False,
+                circled_cutouts=circled_cutouts
             )
             part1_line = LineString(part1.path)
 
@@ -421,6 +423,14 @@ def trace_headland_hop(
                 part2_line = LineString(part2.path)
 
             route_params.corridor_strategy = last_fill_corridors
+            if not gt.check_segmentation(
+                list(part1.path.coords) + list(part2.path.coords),
+                from_headland,
+                "trace_headland_hop()",
+                from_node.get_ab_line(),
+                nodes[to_index].get_ab_line(),
+            ):
+                print("Segmentation check failed for headland hop")
             return Curve(
                 list(part1.path.coords) + list(part2.path.coords),
                 CurveType.U_TURN,
@@ -557,6 +567,9 @@ def trace_neighbor_curve(
         + list(curve2.path.coords)
     )
     path = [Point(coord) for coord in combined_coords]
+
+    if not gt.check_segmentation(path, headland, "trace_neighbour_curve()", from_segment, to_segment):
+        print("Segmentation check failed for neighbor curve")
     return Curve(path, CurveType.PI_CURVE, True)
 
 
@@ -634,6 +647,9 @@ def search_curve_to_headland(
 
     if not path.dwithin(headland_ring, 0.1):
         path = gt.extend_line_in_bounds(path, headland_ring, extend_back=False)
+
+    if not gt.check_segmentation(path, headland_ring, "curve_calculation", ab_line, headland_segment):
+        print("Segmentation check failed for curve to headland")
 
     return Curve(path, curve_type, valid)
 
@@ -713,6 +729,9 @@ def search_curve_to_ab(
 
     if not path.dwithin(headland_ring, 0.1):
         path = gt.extend_line_in_bounds(path, headland_ring, extend_front = False)
+
+    if not gt.check_segmentation(path, headland_ring, "search_curve_to_ab()", ab_line, headland_segment):
+        print("Segmentation check failed for curve to ab")
 
     return Curve(path, curve_type, valid)
 

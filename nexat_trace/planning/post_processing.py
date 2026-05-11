@@ -328,7 +328,6 @@ def cutout_avoidance(route: Route) -> None:
                 print("Segmented line detected after cutout avoidance, consider increasing segmentation_avoidance_distance or"
                       + " decreasing vehicle_turning_radius")
             last_intersection = intersection
-
     _rebuild_line(route, final_path)
 
 
