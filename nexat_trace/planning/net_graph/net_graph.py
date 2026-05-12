@@ -14,7 +14,6 @@ from nexat_trace.shared import progress
 from nexat_trace.shared.config import RoutePlanningConfig
 from nexat_trace.shared.weights import Weights
 from nexat_trace.util.geom_tools import angle_between_lines
-from debug_visuals import Visualizer
 
 
 class NetGraph:
