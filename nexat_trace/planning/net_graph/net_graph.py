@@ -447,10 +447,12 @@ class NetGraph:
                                 dist_hop_line = self.track_graph.get_node(ids[-2]).position.distance(
                                     self.track_graph.get_node(ids[-1]).position
                                 )
-                                if (abs(theta1) > pi / 2 or (min_dist_1 + min_dist_2 > dist_hop_line / 2)):
+                                if (abs(theta1) > pi / 2):
                                     if self.track_graph.route_params.debug_prints:
                                         print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle or"
                                               + " because of ring hop with insufficient distance to perform it")
+                                elif min_dist_1 + min_dist_2 > dist_hop_line / 2:
+                                    new_path.metrics.cost_offset += 1000  # soft remove lines, that might not be drivable
                                     continue
                         elif len(ids) >= 3:
                             is_ring_hop = (
