@@ -242,6 +242,34 @@ def erode_linearring(ring: LinearRing, radius: float) -> LinearRing:
     return new_ring
 
 
+def erode_polygon_inwards(poly: Polygon, radius: float) -> Polygon:
+    """
+    Smooths the Polygon to be drivable for the vehicle.
+
+    Erodes the given polygon by buffering inwards once, outwards once
+    to smooth all vertices in the geometry to the given radius.
+
+    """
+    buffer = poly.buffer(
+                -1.0 * radius,
+                join_style="round",
+                resolution=45
+            )
+    buffer = buffer.buffer(
+        +1.0 * radius,
+        join_style="round",
+        resolution=45
+    )
+
+    if isinstance(buffer, MultiPolygon):  # TODO handle this case better
+        buffer = max(buffer.geoms, key=lambda poly: poly.area)
+
+    if not isinstance(buffer, Polygon):
+        raise ValueError("Failed to smooth headland ring in one piece")
+
+    return buffer
+
+
 T = TypeVar('T')
 
 
@@ -560,32 +588,43 @@ def dubins_between_segments(
     if ipol_candidates == []:
         return None
 
-    _, intersection_point, ipol_current, ipol_target = ipol_candidates.pop(0)
+    for _, _, ipol_current, ipol_target in ipol_candidates:
+        current_segment_new_coords = substring(
+            current_line_extended,
+            0.0,
+            current_line_extended.project(ipol_current)
+        ).coords[-2:]
 
-    current_segment_new_coords = substring(
-        current_line_extended,
-        0.0,
-        current_line_extended.project(ipol_current)
-    ).coords[-2:]
+        if len(current_segment_new_coords) < 2:
+            continue
+        try:
+            current_segment = LineString(current_segment_new_coords)
 
-    if len(current_segment_new_coords) < 2:
-        return None
+            target_segment = LineString(
+                substring(
+                    target_line_extended,
+                    target_line_extended.project(ipol_target),
+                    target_line_extended.length
+                ).coords[:2]
+            )
+        except Exception:
+            continue
+        current_vector = LineString((current_segment.boundary.geoms[0], ipol_current))
+        target_vector = LineString((ipol_target, target_segment.boundary.geoms[-1]))
+        if abs(angle_between_lines(current_vector, current_line)) > pi:
+            continue
+        if abs(angle_between_lines(target_vector, target_line)) > pi:
+            continue
 
-    current_segment = LineString(current_segment_new_coords)
+        candidate_turning_radius = turning_radius
+        if abs(angle_between_lines(current_vector, target_vector)) < pi / 4:
+            candidate_turning_radius -= 0.5
+        path = dubins_between_vectors(current_vector, target_vector, candidate_turning_radius)
+        if path is not None and path.length > turning_radius * pi:
+            continue
+        return path
 
-    target_segment = LineString(
-        substring(
-            target_line_extended,
-            target_line_extended.project(ipol_target),
-            target_line_extended.length
-        ).coords[:2]
-    )
-    current_vector = LineString((current_segment.boundary.geoms[0], ipol_current))
-    target_vector = LineString((ipol_target, target_segment.boundary.geoms[-1]))
-    if abs(angle_between_lines(current_vector, target_vector)) < pi / 4:
-        turning_radius -= 0.5
-    path = dubins_between_vectors(current_vector, target_vector, turning_radius)
-    return path
+    return None
 
 
 def turn_to_segment(
@@ -765,7 +804,7 @@ def check_segmentation(path: List[Point] | LineString | List[LineString],
     elif isinstance(path, list) and path[0].geom_type == "LineString":
         segments = path
     elif isinstance(path, LineString):
-        segments, _ = segment_line(path)
+        segments, _ = segment_line(path, radius_threshold=1.35)
     for i in range(len(segments) - 1):
         is_same_start_stop = segments[i].boundary.geoms[-1].distance(segments[i + 1].boundary.geoms[0]) < 1e-9
         is_direction_change = abs(

@@ -23,6 +23,7 @@ from nexat_trace.shared.exceptions import GraphConstructionError
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
+from debug_visuals import Visualizer
 
 
 def get_target_headland_from_track_system(
@@ -44,11 +45,41 @@ def get_target_headland_from_track_system(
         if config.working_width >= 5 * config._track_width:
             target_headland = 3
 
-    is_target = target_headland < len(track_system.headlands)
-    rings = track_system.headlands[min(len(track_system.headlands) - 1, target_headland)]
+    is_target = target_headland < len(track_system.headland_config)
 
-    rounded_rings = [gt.erode_linearring(ring, config.vehicle_turning_radius) for ring in rings]
+    ring_index = min(len(track_system.headlands) - 1, target_headland)
+    headland_prep = _get_headland_prep(track_system, config)
 
+    border_poly = track_system.outer_border
+    rings = []
+    headland_prep_sum = sum(headland_prep[:ring_index + 1])
+    outer = Polygon(border_poly.exterior).buffer(-1 * headland_prep_sum, join_style="round", resolution=45)
+    rings.append(gt.erode_linearring(outer.exterior, config.vehicle_turning_radius))
+    for inner in border_poly.interiors:
+        if Polygon(inner).area > 200.0:
+            inner = inner.buffer(headland_prep_sum, resolution=45, join_style="round")
+            inner = gt.erode_linearring(inner.exterior, config.vehicle_turning_radius)
+            rings.append(inner)
+
+    outer = Polygon(rings[0])  # Polygon from .buffer()
+    holes = rings[1:]
+
+    # Iteratively subtract intersecting holes — re-check after each change
+    changed = True
+    while changed:
+        changed = False
+        remaining = []
+        for hole in holes:
+            if outer.intersects(hole):
+                outer = outer.difference(Polygon(hole))
+                changed = True  # shape changed, need to re-check remaining holes
+            else:
+                remaining.append(hole)
+        holes = remaining
+
+    poly = gt.erode_polygon_inwards(outer, config.vehicle_turning_radius)
+    poly = Polygon(poly.exterior.simplify(1e-3, preserve_topology=True))
+    rounded_rings = [poly.exterior] + list(poly.interiors) + holes
     return rounded_rings, is_target
 
 
@@ -341,7 +372,13 @@ def simplify_ab_lines(
                 closest_before = max(before, key=lambda p: xl.project(p))
                 closest_after = min(after, key=lambda p: xl.project(p))
                 xl_to_headland = gt.substring(xl, xl.project(closest_before), xl.project(closest_after))
-
+        elif len(xl_intersections) == 1:
+            print("Tangente")
+        elif xl_intersections == 0:
+            simplify_pairs.add(i)
+            if route_params.debug_prints:
+                print(f"Removing ab line {line_1} because its extension doesn't intersect the headland")
+            continue
         best_replacement = None
         best_dist = float('inf')
 
@@ -559,12 +596,7 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
         if ((route_params.working_width % (mh)) <= mh / 2)
         else (route_params.working_width - (route_params.working_width % (mh)) + (mh))
     )
-    for i, value in enumerate(track_system.headland_config):
-        head_width = value * route_params._track_width
-        if i == 0:
-            head_width /= 2
-        headland_prep.append(head_width)
-    headland_prep.append(0.5 * route_params._track_width)
+    headland_prep = _get_headland_prep(track_system, route_params)
     if route_params.last_driven_headland_index is not None and route_params.last_driven_headland_index < len(
         track_system.headlands
     ):
@@ -587,11 +619,22 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
                 offs = temp
         outer_headland_rings = track_system.headlands[0]  # TODO make this support multi part fields
         outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
-        inner_border = outer_headland_poly.buffer((sum(headland_prep[1:]) + offs) * -1, resolution=20, cap_style=2, join_style=2)
+        inner_border = outer_headland_poly.buffer((sum(headland_prep[1:]) + offs) * -1, resolution=40, cap_style=2, join_style=2)
 
     if isinstance(inner_border, Polygon):
         inner_border = MultiPolygon([inner_border])
     return inner_border
+
+
+def _get_headland_prep(track_system: TrackSystem, route_params: RoutePlanningConfig) -> list[float | None]:
+    headland_prep = []
+    for i, value in enumerate(track_system.headland_config):
+        head_width = value * route_params._track_width
+        if i == 0:
+            head_width /= 2
+        headland_prep.append(head_width)
+    headland_prep.append(0.5 * route_params._track_width)
+    return headland_prep
 
 
 def get_headland_index_of_path_on_track_system(path: LineString | MultiLineString, track_system: TrackSystem) -> int | None:

@@ -14,6 +14,7 @@ from nexat_trace.shared.curve import Curve
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
+from debug_visuals import Visualizer
 
 
 class Route:
@@ -185,19 +186,6 @@ class Route:
         """
         if self._route_params.debug_prints:
             print("Calculating path")
-        smooth_headlands = []
-        for headland in self._target_headlands:
-            smoothed = gt.erode_linearring(headland, self._route_params.vehicle_turning_radius)
-            if smoothed is not None and not smoothed.is_empty:
-                smooth_headlands.append(smoothed)
-            else:
-                smooth_headlands.append(headland)
-                if self._route_params.debug_prints:
-                    print("erode_linearring did not return valid value")
-                if PlanningMsg.CUTOUT_RING_SMOOTHING_ERROR not in self.planning_messages:
-                    self.planning_messages.append(PlanningMsg.CUTOUT_RING_SMOOTHING_ERROR)
-
-        self._target_headlands = smooth_headlands
 
         # setup cutout working flags
         distinct_ring_indexes = []
@@ -250,7 +238,7 @@ class Route:
             to_node = part[-1]
             curve = None
 
-            from_node_suspects = [102]
+            from_node_suspects = [74]
             if from_node.index in from_node_suspects:
                 print("suspect from node")
 

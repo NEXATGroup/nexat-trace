@@ -145,15 +145,19 @@ def connect_ab_lines(
         is_at_cutout,
         route_params
     )
+    curve1_end_projection = headland_segment.project(Point(curve1.path.coords[-1]))
+    headland_segment_to = gt.substring(headland_segment, curve1_end_projection, headland_segment.length)
+    if isinstance(headland_segment_to, Point):
+        headland_segment_to = gt.substring(headland_segment, 0.9, 1, True)
 
     curve2 = search_curve_to_ab(
-        to_segment,
-        headland_segment,
-        headland_shape,
-        field_border,
-        inner_field_border,
-        is_at_cutout,
-        route_params
+        ab_line=to_segment,
+        headland_segment=headland_segment_to,
+        headland_ring=headland_shape,
+        field_border=field_border,
+        inner_field_border=inner_field_border,
+        is_at_cutout=is_at_cutout,
+        route_params=route_params
     )
 
     valid = True
@@ -285,6 +289,9 @@ def connect_ab_lines(
 
     if route_params.debug_prints and not valid:
         print("connect_ab_lines() was not valid")
+
+    if not gt.check_segmentation(points, headland_shape, "connect_ab_lines()", from_segment, to_segment):
+        print("Segmentation check failed for connect_ab_lines()")
 
     curve_type = Curve.get_dominant_curve_type(curve1, curve2)
     return Curve(points, curve_type, valid)
@@ -597,11 +604,11 @@ def search_curve_to_headland(
 
     # try if simple turn fits
     path = get_simple_turn_to_headland(
-        ab_line,
-        headland_segment,
-        headland_ring,
-        field_border,
-        route_params
+        ab_line=ab_line,
+        headland_segment=headland_segment,
+        headland_ring=headland_ring,
+        field_border=field_border,
+        route_params=route_params
     )
 
     if path is None:
@@ -745,6 +752,20 @@ def get_simple_turn_to_ab(
     """
     Returns the path connecting the end of an ab line to the given headland segment if a simple turn fits between the segments.
     """
+    target_tangent = gt.get_tangent_at_nearest_point(ab_line.interpolate(1.0, True), headland_ring)
+    # TODO calculate with turning radius
+    if abs(gt.angle_between_lines(ab_line, target_tangent)) < pi / 10.0 and target_tangent.dwithin(ab_line, 0.5):
+        start_point = headland_segment.interpolate(
+            headland_segment.length - 5.0
+        )
+        return LineString(
+            [
+                start_point,
+                headland_ring.interpolate(
+                    headland_ring.project(Point(ab_line.coords[-1]))
+                )
+            ]
+        )
 
     curve: LineString | None = None
     if not route_params.robust_curve_calculation_only:
@@ -772,9 +793,9 @@ def get_simple_turn_to_ab(
         )
 
         curve = gt.dubins_between_segments(
-            extended_headland_segment,
-            ab_line,
-            route_params.vehicle_turning_radius,
+            current_line=extended_headland_segment,
+            target_line=ab_line,
+            turning_radius=route_params.vehicle_turning_radius,
             current_point=curve_start,
             bounds=field_border
         )
@@ -789,6 +810,11 @@ def get_simple_turn_to_ab(
             next_candidate = curve_start_candidates[candidate_index]
 
     if curve is None or curve.length > route_params.vehicle_turning_radius * math.pi:
+        in_vector = gt.substring(headland_segment, 0.9, 1, True)
+        out_vector = gt.substring(ab_line, 0, 0.1, True)
+        if gt.angle_between_lines(in_vector, out_vector) < pi / 20.0:
+            curve = gt.dubins_between_vectors(in_vector, out_vector, route_params.vehicle_turning_radius)
+            return curve
         return None
 
     return curve
@@ -848,9 +874,9 @@ def get_simple_turn_to_headland(
         while continue_searching:
             curve_start = ab_line.interpolate(curve_start_projection, True)
             curve = gt.dubins_between_segments(
-                ab_line,
-                headland_segment,
-                route_params.vehicle_turning_radius,
+                current_line=ab_line,
+                target_line=headland_segment,
+                turning_radius=route_params.vehicle_turning_radius,
                 current_point=curve_start,
                 bounds=field_border
             )
@@ -1048,6 +1074,8 @@ def trace_curve(
                 False
             )
 
+    if not gt.check_segmentation(LineString(coords), headland_shape, "trace_curve", ab_segment, headland_segment):
+        print("Segmentation, where there should be none.")
     points = [Point(c) for c in coords]
     return Curve(points, CurveType.UNDEFINED, True)
 
