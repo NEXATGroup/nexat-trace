@@ -70,7 +70,7 @@ def get_target_headland_from_track_system(
         changed = False
         remaining = []
         for hole in holes:
-            if outer.intersects(hole):
+            if outer.exterior.intersects(hole):
                 outer = outer.difference(Polygon(hole))
                 changed = True  # shape changed, need to re-check remaining holes
             else:
@@ -78,7 +78,7 @@ def get_target_headland_from_track_system(
         holes = remaining
 
     poly = gt.erode_polygon_inwards(outer, config.vehicle_turning_radius)
-    poly = Polygon(poly.exterior.simplify(1e-3, preserve_topology=True))
+    poly = poly.simplify(1e-3, preserve_topology=True)
     rounded_rings = [poly.exterior] + list(poly.interiors) + holes
     return rounded_rings, is_target
 
