@@ -271,7 +271,7 @@ class RoutePlanningConfig:
         self.vehicle_speed_curve = 2.08  # m/s -> 7,5km/h
         self.speed_curve_angle_threshold = 0.0001
 
-        self.direction_change_extension_distance = 7.0  # m
+        self.direction_change_extension_distance = 9.0  # m
         self.working_corridor_extension = False
         self.heuristic_corridor_angle = 0.0  # fraction of π rad (0.5π = 90°)
 
