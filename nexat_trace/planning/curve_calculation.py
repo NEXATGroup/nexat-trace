@@ -12,7 +12,6 @@ from nexat_trace.shared.config import CorridorStrategy, RoutePlanningConfig
 from nexat_trace.shared.curve import Curve, CurveType
 from nexat_trace.util import geom_tools as gt
 from nexat_trace.util.field_conversion import get_corridor_line
-from debug_visuals import Visualizer
 
 """
 This module is used to compute dubins paths connecting track segments.
@@ -604,11 +603,11 @@ def search_curve_to_headland(
 
     # try if simple turn fits
     path = get_simple_turn_to_headland(
-        ab_line=ab_line,
-        headland_segment=headland_segment,
-        headland_ring=headland_ring,
-        field_border=field_border,
-        route_params=route_params
+        ab_line,
+        headland_segment,
+        headland_ring,
+        field_border,
+        route_params
     )
 
     if path is None:
@@ -793,11 +792,13 @@ def get_simple_turn_to_ab(
         )
 
         curve = gt.dubins_between_segments(
-            current_line=extended_headland_segment,
-            target_line=ab_line,
-            turning_radius=route_params.vehicle_turning_radius,
-            current_point=curve_start,
-            bounds=field_border
+            extended_headland_segment,
+            ab_line,
+            route_params.vehicle_turning_radius,
+            curve_start,
+            field_border,
+            headland_ring,
+            False
         )
 
         candidate_index += 1
@@ -874,11 +875,13 @@ def get_simple_turn_to_headland(
         while continue_searching:
             curve_start = ab_line.interpolate(curve_start_projection, True)
             curve = gt.dubins_between_segments(
-                current_line=ab_line,
-                target_line=headland_segment,
-                turning_radius=route_params.vehicle_turning_radius,
-                current_point=curve_start,
-                bounds=field_border
+                ab_line,
+                headland_segment,
+                route_params.vehicle_turning_radius,
+                curve_start,
+                field_border,
+                headland_ring,
+                True
             )
             curve_start_projection -= 0.1
 

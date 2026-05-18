@@ -77,12 +77,12 @@ class RoutePlanningConfig:
         Wether or not the route optimization should see the route as a round trip from start point back to start point
         instead of some other end point
     - starting_point:
-        Starting point for the route as Point in utm coords or node id. If no start or end point is given the route will lead
+        Starting point for the route as Point in utm/ENU coords or node id. If no start or end point is given the route will lead
         from nodes nearest to top left to bottom right corner of track system bounding box.
     - finish_point:
-        finish point for the route. Will only be used if round_trip_route is False. As Point in utm coords or node id.
+        finish point for the route. Will only be used if round_trip_route is False. As Point in utm/ENU coords or node id.
     - working_mask_start:
-        Point in utm coords or node id. If given, starting point determines the mask of ab lines for working width > track
+        Point in utm/ENU coords or node id. If given, starting point determines the mask of ab lines for working width > track
         width. Working width mask will be determined automatically if None by maximum overlap of coverage vs least ab lines
         driven.
     - post_processing_steps:
@@ -227,10 +227,10 @@ class RoutePlanningConfig:
         # instead of some other end point
         self.round_trip_route: bool = True
 
-        # starting point for the route as Point in utm coords or node id
+        # starting point for the route as Point in utm/ENU coords or node id
         self.starting_point: Point | int | None = None
         # finish point for the route will only be used if round_trip_route is False
-        # as Point in utm coords or node id
+        # as Point in utm/ENU coords or node id
         self.finish_point: Point | int | None = None
 
         # wether or not to use the starting point to determine the mask of ab lines for

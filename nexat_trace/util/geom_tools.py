@@ -507,6 +507,8 @@ def dubins_between_segments(
         turning_radius: float,
         current_point: Point = None,
         bounds: LinearRing = None,
+        headland_ring: LinearRing = None,
+        ab_is_current_line: bool = False,
         extend_start_line: bool = True) -> LineString | None:
     """
     Return a dubins curve between two line segments.
@@ -566,16 +568,26 @@ def dubins_between_segments(
         return None
 
     ipol_candidates = []
+    # TODO find a better check. This might have problems with very short ab's and the outermost headland ring.
+    if headland_ring is not None:
+        poly_head_ring = Polygon(headland_ring)
+        line_to_check = current_line if ab_is_current_line else target_line
+        intersection = poly_head_ring.intersection(line_to_check)
+        is_current_line_contained = (
+            intersection.length / line_to_check.length > 0.3
+            if line_to_check.length > 0
+            else poly_head_ring.contains(line_to_check)
+        )
     for intersection_point in intersection_points_buffer.geoms:
         ipol_current = current_line_extended.interpolate(current_line_extended.project(intersection_point))
         ipol_target = target_line_extended.interpolate(target_line_extended.project(intersection_point))
 
-        if (intersection_point_line.is_empty or
-                (current_line_extended.project(ipol_current)
-                < current_line_extended.project(nearest_intersection_point_to_point)
-                and target_line_extended.project(ipol_target)
-                > target_line_extended.project(nearest_intersection_point_to_point)
-                and current_line_extended.project(ipol_current) - current_point_projection > 0)):
+        if intersection_point_line.is_empty or (
+            current_line_extended.project(ipol_current) < current_line_extended.project(nearest_intersection_point_to_point)
+            and target_line_extended.project(ipol_target) > target_line_extended.project(nearest_intersection_point_to_point)
+            and current_line_extended.project(ipol_current) - current_point_projection > 0
+            and (poly_head_ring.contains(intersection_point) == is_current_line_contained or headland_ring is None)
+        ):
             ipol_candidates.append(
                 (
                     current_line_extended.project(ipol_current) - current_point_projection,

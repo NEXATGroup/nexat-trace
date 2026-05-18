@@ -75,7 +75,7 @@ OBSTACLE_AVOIDANCE_PROPERTY = "obstacle_avoidance_segments"
 
 class TrackSystem:
     """
-    Class representing the track system of a field. Geometries should be given in metric coordinates (UTM).
+    Class representing the track system of a field. Geometries should be given in metric coordinates (UTM/ ENU).
 
     Attributes
     ----------
