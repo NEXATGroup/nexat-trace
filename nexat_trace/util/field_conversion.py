@@ -536,10 +536,10 @@ def get_track_width(track_system: TrackSystem | List[LineString]) -> float | Non
             most_common = current_value
 
     track_width = most_common
-
-    if abs(track_width - 14.0) < 0.001:
+    tolerance = 0.005
+    if abs(track_width - 14.0) < tolerance:
         track_width = 14.0
-    elif abs(track_width - 13.716) < 0.001:
+    elif abs(track_width - 13.716) < tolerance:
         track_width = 13.716
 
     return track_width
