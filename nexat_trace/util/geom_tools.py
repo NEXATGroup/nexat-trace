@@ -638,7 +638,6 @@ def turn_to_segment(
         pivot_candidates = sorted(intersection.geoms, key=lambda p: from_segment.project(p), reverse=True)
     else:
         return None
-    # well this might be overkill
     for pivot_location in pivot_candidates:
         turn_circle: LinearRing = pivot_location.buffer(turning_radius, resolution = 45).exterior
         nearest_point_line1, _ = nearest_points(line1, turn_circle)
