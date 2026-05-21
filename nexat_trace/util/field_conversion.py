@@ -52,7 +52,8 @@ def get_target_headland_from_track_system(
 
     border_poly = track_system.outer_border
     rings = []
-    headland_prep_sum = sum(headland_prep[:ring_index + 1])
+    _offset = round(track_system.outer_border.exterior.distance(track_system.headlands[0][0]) - headland_prep[0], 1)
+    headland_prep_sum = sum(headland_prep[:ring_index + 1]) + _offset
     outer = Polygon(border_poly.exterior).buffer(-1 * headland_prep_sum, join_style="round", resolution=45)
     rings.append(gt.erode_linearring(outer.exterior, config.vehicle_turning_radius))
     for inner in border_poly.interiors:
