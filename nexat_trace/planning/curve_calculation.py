@@ -475,7 +475,7 @@ def trace_neighbor_curve(
     headland = gt.ring_with_origin_at(
         headland,
         headland.interpolate(
-            headland.project(crossing_point_1) - route_params.direction_change_extension_distance * 5
+            headland.project(crossing_point_1) - route_params.direction_change_extension_distance_brake * 5
         )
     )
 
@@ -483,10 +483,10 @@ def trace_neighbor_curve(
     headland_segment = gt.get_substring_on_linearring(
         headland,
         headland.interpolate(
-            headland.project(crossing_point_1) - route_params.direction_change_extension_distance * 5
+            headland.project(crossing_point_1) - route_params.direction_change_extension_distance_brake * 5
         ),
         headland.interpolate(
-            headland.project(crossing_point_2) + route_params.direction_change_extension_distance * 5
+            headland.project(crossing_point_2) + route_params.direction_change_extension_distance_brake * 5
         )
     )
 
@@ -529,7 +529,7 @@ def trace_neighbor_curve(
         headland.interpolate(
             headland.project(
                 Point(headland_connection_middle.coords[0])
-            ) + route_params.direction_change_extension_distance
+            ) + route_params.direction_change_extension_distance_steer
         )
     )
 
@@ -538,7 +538,7 @@ def trace_neighbor_curve(
         headland.interpolate(
             headland.project(
                 Point(headland_connection_middle.coords[-1])
-            ) - route_params.direction_change_extension_distance
+            ) - route_params.direction_change_extension_distance_steer
         ),
         Point(headland_connection_middle.coords[-1])
     )
@@ -1050,7 +1050,7 @@ def insert_hook_stops_to_ab(
     )
     if working_corridor.length - curve_end_projection > route_params.corridor_threshold:
         extension_point = working_corridor.interpolate(
-            working_corridor.project(curve_end) + route_params.direction_change_extension_distance
+            working_corridor.project(curve_end) + route_params.direction_change_extension_distance_steer
         )
         points.append(extension_point)
 
@@ -1063,7 +1063,7 @@ def insert_hook_stops_to_ab(
                 working_corridor = gt.extend_line_in_bounds(
                     working_corridor,
                     Polygon(turning_headland),
-                    route_params.direction_change_extension_distance,
+                    route_params.direction_change_extension_distance_brake,
                     extend_front=False,
                     extend_back=True,
                 )
@@ -1100,7 +1100,7 @@ def insert_hook_stops_to_headland(
         backup_point = working_corridor.interpolate(
             working_corridor.project(
                 curve_start
-            ) - route_params.direction_change_extension_distance
+            ) - route_params.direction_change_extension_distance_steer
         )
         points.insert(0, backup_point)
         if working_corridor is None or not isinstance(working_corridor, LineString) or working_corridor.length < 0.01:
@@ -1111,7 +1111,7 @@ def insert_hook_stops_to_headland(
             working_corridor = gt.extend_line_in_bounds(
                 working_corridor,
                 Polygon(turning_headland),
-                route_params.direction_change_extension_distance,
+                route_params.direction_change_extension_distance_brake,
                 extend_front=True,
                 extend_back=False,
             )

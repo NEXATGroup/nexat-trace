@@ -254,7 +254,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             # distance of pi turn maneuver
             metrics.distance += pi * route_params.vehicle_turning_radius  # 2 * 1/4 circle circumference
             metrics.distance += route_params._track_width * 2.0
-            metrics.distance += route_params.direction_change_extension_distance * 2.0
+            metrics.distance += route_params.direction_change_extension_distance_brake * 2.0
 
         # angle calculation
         if line1 is not None and line2 is not None:
