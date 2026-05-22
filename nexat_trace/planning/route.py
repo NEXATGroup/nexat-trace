@@ -290,7 +290,7 @@ class Route:
                     extension_segment = to_node.get_ab_line()
                     extension_length = min(
                         extension_segment.length,
-                        self._route_params.direction_change_extension_distance
+                        self._route_params.direction_change_extension_distance_steer
                     )
                     extension_point = extension_segment.interpolate(
                         extension_segment.length - extension_length

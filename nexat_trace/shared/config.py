@@ -104,9 +104,12 @@ class RoutePlanningConfig:
         Time in s that is added to time calculation on a driving direction change
     - speed_curve_angle_threshold:
         Angle value in rad above which a path segment is considered a 'curve' during vehicle driving time calculation.
-    - direction_change_extension_distance:
+    - direction_change_extension_distance_steer:
         Distance in m that is appended to a path segment in a straight line on a direction change maneuver.
         Used for the vehicle to get some space to steer
+    - direction_change_extension_distance_brake:
+        Distance in m that is appended to a path segment in a straight line on a direction change maneuver.
+        Used for the vehicle to get some space to brake
     - working_corridor_extension:
         Boolean indicating whether direction change extension should be applied to working corridor calculation.
     - direct_curve_link_distance:
@@ -271,7 +274,8 @@ class RoutePlanningConfig:
         self.vehicle_speed_curve = 2.08  # m/s -> 7,5km/h
         self.speed_curve_angle_threshold = 0.0001
 
-        self.direction_change_extension_distance = 7.0  # m
+        self.direction_change_extension_distance_steer = 9.0  # m
+        self.direction_change_extension_distance_brake = 14.0  # m
         self.working_corridor_extension = False
         self.heuristic_corridor_angle = 0.0  # fraction of π rad (0.5π = 90°)
 
@@ -320,7 +324,8 @@ class RoutePlanningConfig:
         new.vehicle_speed_straight = self.vehicle_speed_straight
         new.vehicle_speed_curve = self.vehicle_speed_curve
         new.speed_curve_angle_threshold = self.speed_curve_angle_threshold
-        new.direction_change_extension_distance = self.direction_change_extension_distance
+        new.direction_change_extension_distance_steer = self.direction_change_extension_distance_steer
+        new.direction_change_extension_distance_brake = self.direction_change_extension_distance_brake
         new.working_corridor_extension = self.working_corridor_extension
         new.heuristic_corridor_angle = self.heuristic_corridor_angle
         new.direct_curve_link_distance = self.direct_curve_link_distance
