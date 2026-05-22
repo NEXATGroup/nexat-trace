@@ -475,7 +475,7 @@ def trace_neighbor_curve(
     headland = gt.ring_with_origin_at(
         headland,
         headland.interpolate(
-            headland.project(crossing_point_1) - route_params.direction_change_extension_distance_brake * 5
+            headland.project(crossing_point_1) - route_params.direction_change_extension_distance_steer * 5
         )
     )
 
@@ -483,10 +483,10 @@ def trace_neighbor_curve(
     headland_segment = gt.get_substring_on_linearring(
         headland,
         headland.interpolate(
-            headland.project(crossing_point_1) - route_params.direction_change_extension_distance_brake * 5
+            headland.project(crossing_point_1) - route_params.direction_change_extension_distance_steer * 5
         ),
         headland.interpolate(
-            headland.project(crossing_point_2) + route_params.direction_change_extension_distance_brake * 5
+            headland.project(crossing_point_2) + route_params.direction_change_extension_distance_steer * 5
         )
     )
 
