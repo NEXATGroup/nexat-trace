@@ -16,7 +16,11 @@ from nexat_trace.shared.exceptions import GraphConstructionError
 from nexat_trace.shared.weights import Weights
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
-from nexat_trace.util.field_conversion import get_ab_lines_on_path, get_headland_index_of_path_on_track_system
+from nexat_trace.util.field_conversion import (
+    get_ab_lines_on_path,
+    get_headland_index_of_path_on_track_system,
+    get_working_width_of_path_on_track_system,
+)
 from nexat_trace.util.geom_tools import angle_between_lines
 
 
@@ -243,8 +247,13 @@ class TrackGraph:
         skip_ab_lines = round(working_width // self.route_params._track_width)
         if skip_ab_lines == 0:
             return self.primary_nodes
+
+        multi_ab = MultiLineString(self.ab_lines)
+        working_area = multi_ab.buffer(
+            (self.route_params._track_width / 2.0) + 0.01, cap_style=2, join_style=2, mitre_limit=0.01
+        )
         nodes: List[PrimaryTrackGraphNode] = []
-        if start is not None and not self.inner_border.contains(start):
+        if start is not None and not self.field_border.contains(start):
             start = None
 
         if start is None:
@@ -253,11 +262,6 @@ class TrackGraph:
             for i in range(skip_ab_lines):
                 offset = self.route_params._track_width * i
                 subsets.append(self._get_mask_with_offset(skip_ab_lines, offset))
-
-            multi_ab = MultiLineString(self.ab_lines)
-            working_area = multi_ab.buffer(
-                (self.route_params._track_width / 2.0) + 0.01, cap_style=2, join_style=2, mitre_limit=0.01
-            )
 
             optimal_index = 0
             max_coverage = 0.0
@@ -283,7 +287,7 @@ class TrackGraph:
             mask = MultiLineString(lines)
 
         #  check if we need irregular ab lines to cover the whole area
-        selected_lines = MultiLineString(subset_lines[optimal_index])
+        selected_lines = mask
         subset_coverage = selected_lines.buffer(
             working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
         )
@@ -315,6 +319,27 @@ class TrackGraph:
         nodes_indexes = self.primary_node_tree.query(mask, "dwithin", 1.0)
         nodes = [self.primary_nodes[i] for i in nodes_indexes]
         nodes.sort(key=lambda node: node.index)
+
+        return nodes
+
+    def _get_working_width_subset_from_paths(
+            self,
+            driven_paths: List[MultiLineString],
+            working_width: float,
+            start: Point | int = None) -> List[PrimaryTrackGraphNode]:
+        """
+        Returns a subset of primary nodes depending on the first path, the working_width and optional start.
+        """
+        # TODO implement supoort for multiple paths
+
+        path_working_width = get_working_width_of_path_on_track_system(driven_paths[0], self.track_system)
+
+        if working_width != round(path_working_width, 1):
+            return self._get_working_width_subset(working_width, start)
+
+        all_nodes = self.get_route_nodes_from_path(driven_paths[0])
+
+        nodes = [node for node in all_nodes if isinstance(node, PrimaryTrackGraphNode)]
 
         return nodes
 
@@ -1022,14 +1047,14 @@ class TrackGraph:
         primary_node_multipoint = MultiPoint([node.position for node in self.primary_nodes])
         first_point_index = 0
         while not Point(cut_path_points_coords[first_point_index]).dwithin(primary_node_multipoint, 5.0):
+            first_point_index += 1
             if first_point_index >= len(cut_path_points_coords):
                 if self.route_params.debug_prints:
                     print(
-                        f"Cutting path to first node, point {cut_path_points_coords[first_point_index]} is not within 5.0 of any"
-                        + " primary node"
+                        "Cutting path to first node is not within 5.0 of any primary node"
                     )
+                first_point_index = 0
                 break
-            first_point_index += 1
 
         if first_point_index > 0:
             did_cut_path_to_first_node = True
@@ -1044,8 +1069,13 @@ class TrackGraph:
         start_line = ab_line_set[0]
         first_line_index = 0
 
-        if (not did_cut_path_to_first_node
-                and start_node.position.distance(start_line.centroid) < Point(cut_path.coords[1]).distance(start_line.centroid)):
+        look_ahead = min(2, len(cut_path.coords) - 1)
+        check_path = LineString(cut_path.coords[0:look_ahead + 1])
+        check_points = [check_path.interpolate(i * 0.2, True) for i in range(1, 11)]
+        if not did_cut_path_to_first_node and all(
+            round(start_line.distance(check_points[k]), 5) > round(start_line.distance(Point(cut_path.coords[0])), 5)
+            for k in range(0, look_ahead + 1)
+        ):
             # does route start with a turn to headland or traversal of ab line?
             # start with turn to headland
             first_line_index = 1
