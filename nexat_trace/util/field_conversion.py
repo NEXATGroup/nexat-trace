@@ -564,6 +564,7 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
         if i == 0:
             head_width /= 2
         headland_prep.append(head_width)
+    headland_prep.append(0.5 * route_params._track_width)
     if route_params.last_driven_headland_index is not None and route_params.last_driven_headland_index < len(
         track_system.headlands
     ):

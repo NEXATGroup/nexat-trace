@@ -71,6 +71,7 @@ def extend_line_in_bounds(
     """
     Returns a version of the line with back and front extensions touching the the first intersection with the bounds.
     """
+    line = remove_repeated_points(line, 1e-4)
     bounds_exterior_ring = bounds
     bounds_collider = bounds
     if isinstance(bounds, Polygon):
@@ -152,6 +153,7 @@ def extend_line(line: LineString, distance: float, extend_front: bool = True, ex
     """
     Extends the given line.
     """
+    line = remove_repeated_points(line, 1e-4)
     # get outwards pointing end segments of line
     start_segment = LineString([line.coords[1], line.coords[0]])
     end_segment = LineString([line.coords[-2], line.coords[-1]])
@@ -616,11 +618,11 @@ def turn_to_segment(
     line1_offset_r = line1.parallel_offset(turning_radius)
     line1_offset_l = line1.parallel_offset(-turning_radius)
     line1_offset = line1_offset_r
-    line2_end = line2.interpolate(1.0, True)
+    line2_end = to_segment.boundary.geoms[-1]
     if line1_offset_l.centroid.distance(line2_end) < line1_offset_r.centroid.distance(line2_end):
         line1_offset = line1_offset_l
 
-    line1_start = line1.interpolate(0.0)
+    line1_start = from_segment.boundary.geoms[0]
     line2_offset_r = line2.parallel_offset(turning_radius)
     line2_offset_l = line2.parallel_offset(-turning_radius)
     line2_offset = line2_offset_r
@@ -630,56 +632,59 @@ def turn_to_segment(
     pivot_location: Point | None = None
     intersection = line1_offset.intersection(line2_offset)
     if isinstance(intersection, Point):
-        pivot_location = intersection
+        pivot_candidates = [intersection]
     elif isinstance(intersection, MultiPoint):
-        pivot_location = max(list(intersection.geoms), key = lambda p: from_segment.project(p))
+        # Sort candidates to prefer pivots that maximize drive distance on line1
+        pivot_candidates = sorted(intersection.geoms, key=lambda p: from_segment.project(p), reverse=True)
     else:
         return None
+    for pivot_location in pivot_candidates:
+        turn_circle: LinearRing = pivot_location.buffer(turning_radius, resolution = 45).exterior
+        nearest_point_line1, _ = nearest_points(line1, turn_circle)
+        nearest_point_line2, _ = nearest_points(line2, turn_circle)
+        turn_circle = ring_with_origin_at(turn_circle, nearest_point_line1)
+        nearest_point_line1_projection = line1.project(nearest_point_line1)
+        line1_direction = LineString(
+            [
+                line1.interpolate(nearest_point_line1_projection - 0.01),
+                line1.interpolate(nearest_point_line1_projection + 0.01)
+            ]
+        )
+        turn_circle_direction = LineString(
+            [
+                turn_circle.coords[0],
+                turn_circle.coords[1],
+            ]
+        )
+        if abs(angle_between_lines(line1_direction, turn_circle_direction)) > pi / 2.0:
+            turn_circle = turn_circle.reverse()
 
-    turn_circle: LinearRing = pivot_location.buffer(turning_radius, resolution = 45).exterior
-    nearest_point_line1, _ = nearest_points(line1, turn_circle)
-    nearest_point_line2, _ = nearest_points(line2, turn_circle)
-    turn_circle = ring_with_origin_at(turn_circle, nearest_point_line1)
-    nearest_point_line1_projection = line1.project(nearest_point_line1)
-    line1_direction = LineString(
-        [
-            line1.interpolate(nearest_point_line1_projection - 0.01),
-            line1.interpolate(nearest_point_line1_projection + 0.01)
-        ]
-    )
-    turn_circle_direction = LineString(
-        [
-            turn_circle.coords[0],
-            turn_circle.coords[1],
-        ]
-    )
-    if abs(angle_between_lines(line1_direction, turn_circle_direction)) > pi / 2.0:
-        turn_circle = turn_circle.reverse()
+        curve = get_substring_on_linearring(turn_circle, nearest_point_line1, nearest_point_line2)
 
-    curve = get_substring_on_linearring(turn_circle, nearest_point_line1, nearest_point_line2)
+        if curve.length > 1.8 * pi * turning_radius:
+            continue
 
-    if curve.length > 1.8 * pi * turning_radius:
-        return None
+        curve_start = LineString(
+            [
+                curve.coords[0],
+                curve.coords[1]
+            ]
+        )
+        if abs(angle_between_lines(curve_start, line1)) > pi / 2:
+            continue
 
-    curve_start = LineString(
-        [
-            curve.coords[0],
-            curve.coords[1]
-        ]
-    )
-    if abs(angle_between_lines(curve_start, line1)) > pi / 2:
-        return None
+        curve_end = LineString(
+            [
+                curve.coords[-2],
+                curve.coords[-1]
+            ]
+        )
+        if abs(angle_between_lines(curve_end, line2)) > pi / 2:
+            continue
 
-    curve_end = LineString(
-        [
-            curve.coords[-2],
-            curve.coords[-1]
-        ]
-    )
-    if abs(angle_between_lines(curve_end, line2)) > pi / 2:
-        return None
+        return curve
 
-    return curve
+    return None
 
 
 def get_tangent_at_nearest_point(p: Point, line: LineString | LinearRing) -> LineString:
