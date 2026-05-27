@@ -373,6 +373,20 @@ def simplify_ab_lines(
                 closest_before = max(before, key=lambda p: xl.project(p))
                 closest_after = min(after, key=lambda p: xl.project(p))
                 xl_to_headland = gt.substring(xl, xl.project(closest_before), xl.project(closest_after))
+            else:
+                # centroid is outside the field — fall back to Hausdorff distance over all consecutive segments
+                xl_intersections.sort(key=lambda p: xl.project(p))
+                best_seg = None
+                best_hausdorff = float('inf')
+                for k in range(len(xl_intersections) - 1):
+                    seg = gt.substring(xl, xl.project(xl_intersections[k]), xl.project(xl_intersections[k + 1]))
+                    dist = seg.hausdorff_distance(line_1)
+                    if dist < best_hausdorff:
+                        best_hausdorff = dist
+                        best_seg = seg
+                if best_seg is not None:
+                    xl_to_headland = best_seg
+
         elif len(xl_intersections) == 1:
             print("Tangente")
         elif xl_intersections == 0:
@@ -382,6 +396,15 @@ def simplify_ab_lines(
             continue
         best_replacement = None
         best_dist = float('inf')
+
+        if xl_to_headland is None:
+            if route_params.debug_prints:
+                print("xl to headland is None, this should not happen")
+                # removes the problematic line instead of crashing. Relevant ab lines might not be worked.
+            simplify_pairs.add(i)
+            if route_params.debug_prints:
+                print(f"Removing ab line {line_1} because its extension doesn't intersect the headland")
+            continue
 
         for ii in range(i + 1, len(old_ab_lines)):
             line_2 = old_ab_lines[ii]

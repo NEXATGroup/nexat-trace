@@ -815,7 +815,8 @@ def get_simple_turn_to_ab(
         out_vector = gt.substring(ab_line, 0, 0.1, True)
         if gt.angle_between_lines(in_vector, out_vector) < pi / 20.0:
             curve = gt.dubins_between_vectors(in_vector, out_vector, route_params.vehicle_turning_radius)
-            return curve
+            if curve is not None and curve.length < route_params.vehicle_turning_radius * math.pi:
+                return curve
         return None
 
     return curve
