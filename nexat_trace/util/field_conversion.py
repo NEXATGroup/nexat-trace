@@ -793,11 +793,17 @@ def get_corridor_line(
     min_width = 0.0001
     half_width = working_width / 2.0 - min_width
 
-    # Resolve MultiPolygon to the single polygon nearest to the ab_line
+    # Resolve MultiPolygon to a single Polygon covering all parts near the ab_line
     if isinstance(inner_border, MultiPolygon):
-        inner_border = min(inner_border.geoms, key=lambda poly: poly.distance(ab_line))
+        touching = [poly for poly in inner_border.geoms if poly.distance(ab_line) < 1e-4]
+        if len(touching) > 1:
+            inner_border = unary_union(touching).convex_hull
+        elif len(touching) == 1:
+            inner_border = touching[0]
+        else:
+            inner_border = min(inner_border.geoms, key=lambda poly: poly.distance(ab_line))
 
-    inner_border_poly = Polygon(inner_border)
+    inner_border_poly = inner_border if isinstance(inner_border, Polygon) else Polygon(inner_border)
 
     def get_intersection_line_savely(line: LineString, polygon: Polygon) -> LineString | None:
         """Gets the intersection between a line and a polygon and ensure it returns a LineString."""
