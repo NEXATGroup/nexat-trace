@@ -23,8 +23,9 @@ class PostSteps(Enum):
     Enum for post processing step procedures.
     """
 
-    CUTOUT_AVOIDANCE = 0        # runs first
-    AB_LINE_INTERPOLATION = 1   # runs last
+    CUTOUT_AVOIDANCE = 0  # runs first
+    EXTEND_START_END = 1
+    AB_LINE_INTERPOLATION = 2  # runs last
 
 
 class RoutePlanningConfig:
@@ -247,7 +248,7 @@ class RoutePlanningConfig:
         # ----------- POSTPROCESSING PARAMETERS ------------ #
         #
 
-        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE]
+        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE, PostSteps.EXTEND_START_END]
 
         self.post_processing_steps = {}
         for step in PostSteps:
