@@ -1,7 +1,7 @@
 from math import pi
 from typing import List
 
-from shapely import LinearRing, LineString, Point, Polygon, STRtree
+from shapely import LinearRing, LineString, MultiPolygon, Point, Polygon, STRtree
 
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.planning.track_graph.track_graph_node import TrackGraphNode
@@ -153,7 +153,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             target_node: TrackGraphNode,
             metrics: EdgeMetrics,
             ab_line: LineString,
-            inner_border: LinearRing,
+            inner_border: LinearRing | Polygon | MultiPolygon,
             headland_ring: LinearRing,
             route_params: RoutePlanningConfig):
         """

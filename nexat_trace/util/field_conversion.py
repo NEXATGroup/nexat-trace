@@ -782,7 +782,7 @@ def get_corridor_line(
     ab_line: LineString,
     working_width: float,
     turning_headland: LinearRing,
-    inner_border: LinearRing | Polygon,
+    inner_border: LinearRing | Polygon | MultiPolygon,
     implement_working_offset: float = 0.0
 ) -> LineString:
     """Returns the working corridor line of an ab line within a turning headland.
@@ -792,23 +792,27 @@ def get_corridor_line(
     headland_poly = Polygon(turning_headland)
     min_width = 0.0001
     half_width = working_width / 2.0 - min_width
+
+    # Resolve MultiPolygon to the single polygon nearest to the ab_line
+    if isinstance(inner_border, MultiPolygon):
+        inner_border = min(inner_border.geoms, key=lambda poly: poly.distance(ab_line))
+
     inner_border_poly = Polygon(inner_border)
 
     def get_intersection_line_savely(line: LineString, polygon: Polygon) -> LineString | None:
         """Gets the intersection between a line and a polygon and ensure it returns a LineString."""
         intersection = line.intersection(polygon, grid_size=0)
         if isinstance(intersection, MultiLineString):
-            for i in range(len(intersection.geoms)):
-                # For some reason, sometimes line geometries with length of about 10^-10 are created
-                if intersection.geoms[i].length > 0.1:
-                    return intersection.geoms[i]
+            # Return the longest segment to avoid picking a spurious short fragment
+            candidates = [g for g in intersection.geoms if g.length > 0.1]
+            if candidates:
+                return max(candidates, key=lambda g: g.length)
         elif isinstance(intersection, LineString):
             return intersection
         elif isinstance(intersection, GeometryCollection):
-            # I can't believe I have to do this, but intersection at hole produced this for no discernable reason
-            for geom in intersection.geoms:
-                if isinstance(geom, LineString) and geom.length > 0.1:
-                    return geom
+            candidates = [g for g in intersection.geoms if isinstance(g, LineString) and g.length > 0.1]
+            if candidates:
+                return max(candidates, key=lambda g: g.length)
         else:
             return None
 
