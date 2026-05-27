@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import List
 
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, remove_repeated_points
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, remove_repeated_points
 from shapely.ops import substring
 
 from nexat_trace.planning import curve_calculation
@@ -328,6 +328,72 @@ def cutout_avoidance(route: Route) -> None:
     _rebuild_line(route, final_path)
 
 
+def extend_start_end(route: Route) -> None:
+    """
+    Extends the route path at the start and end by up to 5m.
+
+    Only applies per endpoint if that point is roughly inside the inner_border.
+    The extension is capped at the distance from the point to the closest AB line endpoint.
+    """
+    if route._path is None or len(route._path) < 2:
+        return
+
+    max_extension = 5.0
+    inner_border = route._inner_border
+    if inner_border is None:
+        return
+
+    def _is_inside(point: Point) -> bool:
+        if isinstance(inner_border, MultiPolygon):
+            return any(poly.buffer(0.1).contains(point) for poly in inner_border.geoms)
+        elif isinstance(inner_border, Polygon):
+            return inner_border.buffer(0.1).contains(point)
+        else:
+            return Polygon(inner_border).buffer(0.1).contains(point)
+
+    # --- Extend at start ---
+    start_point = route._path[0]
+    if _is_inside(start_point):
+        closest_node = min(route._nodes, key=lambda node: node.point.distance(start_point))
+        closest_ab_line = closest_node.ab_line
+
+        ab_start = Point(closest_ab_line.coords[0])
+        ab_end = Point(closest_ab_line.coords[-1])
+        closer_endpoint = min(ab_start, ab_end, key=lambda p: p.distance(start_point))
+
+        extension_distance = min(max_extension, start_point.distance(closer_endpoint))
+        if extension_distance > 0.01:
+            first_segment = LineString([route._path[1], route._path[0]])
+            direction = geom_tools.direction_of_line(first_segment)
+            new_start = Point(
+                start_point.x + direction[0] * extension_distance,
+                start_point.y + direction[1] * extension_distance
+            )
+            route._path.insert(0, new_start)
+
+    # --- Extend at end ---
+    end_point = route._path[-1]
+    if _is_inside(end_point):
+        closest_node = min(route._nodes, key=lambda node: node.point.distance(end_point))
+        closest_ab_line = closest_node.ab_line
+
+        ab_start = Point(closest_ab_line.coords[0])
+        ab_end = Point(closest_ab_line.coords[-1])
+        closer_endpoint = min(ab_start, ab_end, key=lambda p: p.distance(end_point))
+
+        extension_distance = min(max_extension, end_point.distance(closer_endpoint))
+        if extension_distance > 0.01:
+            last_segment = LineString([route._path[-2], route._path[-1]])
+            direction = geom_tools.direction_of_line(last_segment)
+            new_end = Point(
+                end_point.x + direction[0] * extension_distance,
+                end_point.y + direction[1] * extension_distance
+            )
+            route._path.append(new_end)
+
+    _rebuild_line(route, route._path)
+
+
 def interpolate_ab_lines(route: Route) -> None:
     """
     Fills large distances in the path with more points.
@@ -410,5 +476,6 @@ def collision_in_route(route: Route) -> bool:
 
 FUNCTIONS = {
     PostSteps.CUTOUT_AVOIDANCE: cutout_avoidance,
+    PostSteps.EXTEND_START_END: extend_start_end,
     PostSteps.AB_LINE_INTERPOLATION: interpolate_ab_lines
 }
