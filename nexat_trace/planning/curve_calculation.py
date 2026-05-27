@@ -2,7 +2,7 @@ import math
 from math import pi
 from typing import Dict, List
 
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, Polygon, STRtree
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, STRtree
 from shapely.ops import nearest_points
 
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
@@ -25,7 +25,7 @@ def connect_ab_lines(
         to_index: int,
         headlands: List[LinearRing],
         field_border: LinearRing,
-        inner_field_border: LinearRing,
+        inner_field_border: LinearRing | Polygon | MultiPolygon,
         allow_headland_hop = True,
         circled_cutouts: Dict[int, bool] = None) -> Curve:
     """
@@ -584,7 +584,7 @@ def search_curve_to_headland(
         headland_segment: LineString,
         headland_ring: LineString,
         field_border: LinearRing,
-        inner_field_border: LinearRing,
+        inner_field_border: LinearRing | Polygon | MultiPolygon,
         is_at_cutout: bool,
         route_params: RoutePlanningConfig,
         metrics: EdgeMetrics = None) -> Curve:
@@ -665,7 +665,7 @@ def search_curve_to_ab(
         headland_segment: LineString,
         headland_ring: LineString,
         field_border: LinearRing,
-        inner_field_border: LinearRing,
+        inner_field_border: LinearRing | Polygon | MultiPolygon,
         is_at_cutout: bool,
         route_params: RoutePlanningConfig,
         metrics: EdgeMetrics = None) -> Curve:

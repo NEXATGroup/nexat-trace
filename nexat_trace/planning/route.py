@@ -255,7 +255,7 @@ class Route:
                         -1,
                         self._target_headlands,
                         self._field_border,
-                        self._inner_border,
+                        self._full_inner_border,
                         self._route_params
                     )
                     check_curve_and_extend(curve)
@@ -267,7 +267,7 @@ class Route:
                         -1,
                         self._target_headlands,
                         self._field_border,
-                        self._inner_border,
+                        self._full_inner_border,
                         circled_cutouts=self._circled_cutouts
                     )
                     check_curve_and_extend(curve)
@@ -280,7 +280,7 @@ class Route:
                     -1,
                     self._target_headlands,
                     self._field_border,
-                    self._inner_border,
+                    self._full_inner_border,
                     self._route_params
                 )
                 check_curve_and_extend(curve)
