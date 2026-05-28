@@ -242,6 +242,40 @@ def erode_linearring(ring: LinearRing, radius: float) -> LinearRing:
     return new_ring
 
 
+def erode_line_string(line_string: LineString, radius: float) -> LineString:
+    """Erode the given LineString by buffering outwards once, inwards twice and outwards once again to smooth all vertices in the geometry to the given radius.
+
+    Args:
+        line_string: The LineString to be eroded.
+        radius: The radius to which the vertices should be smoothed.
+
+    Returns:
+        LineString: The eroded LineString.
+    """
+    line_string_offset = line_string.offset_curve(
+        1 * radius,
+        join_style="round",
+        quad_segs=180
+    )
+    if not isinstance(line_string_offset, LineString):
+        return line_string
+    line_string_offset = line_string_offset.offset_curve(
+        -2 * radius,
+        join_style="round",
+        quad_segs=180
+    )
+    if not isinstance(line_string_offset, LineString):
+        return line_string
+    new_line = line_string_offset.offset_curve(
+        1 * radius,
+        join_style="round",
+        quad_segs=180
+    )
+    if not isinstance(new_line, LineString):
+        return line_string
+    return new_line
+
+
 def erode_polygon_inwards(poly: Polygon, radius: float) -> Polygon:
     """
     Smooths the Polygon to be drivable for the vehicle.
