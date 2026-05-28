@@ -333,8 +333,7 @@ def extend_start_end(route: Route) -> None:
     Extends the route path at the start and end by up to 5m.
 
     Only applies per endpoint if that point is roughly inside the inner_border.
-    The start extension is capped at the distance to the nearest headland.
-    The end extension is capped at the distance to the farther AB line endpoint.
+    The extension is capped at the distance from the point to the closest AB line endpoint.
     """
     if route._path is None or len(route._path) < 2:
         return
@@ -355,11 +354,14 @@ def extend_start_end(route: Route) -> None:
     # --- Extend at start ---
     start_point = route._path[0]
     if _is_inside(start_point):
-        all_headland_rings = [ring for ring_list in route._track_system.headlands for ring in ring_list]
-        nearest_headland_dist = min(
-            ring.distance(start_point) for ring in all_headland_rings
-        )
-        extension_distance = min(max_extension, nearest_headland_dist)
+        closest_node = min(route._nodes, key=lambda node: node.point.distance(start_point))
+        closest_ab_line = closest_node.ab_line
+
+        ab_start = Point(closest_ab_line.coords[0])
+        ab_end = Point(closest_ab_line.coords[-1])
+        closer_endpoint = min(ab_start, ab_end, key=lambda p: p.distance(start_point))
+
+        extension_distance = min(max_extension, start_point.distance(closer_endpoint))
         if extension_distance > 0.01:
             first_segment = LineString([route._path[1], route._path[0]])
             direction = geom_tools.direction_of_line(first_segment)
@@ -377,9 +379,9 @@ def extend_start_end(route: Route) -> None:
 
         ab_start = Point(closest_ab_line.coords[0])
         ab_end = Point(closest_ab_line.coords[-1])
-        farther_endpoint = max(ab_start, ab_end, key=lambda p: p.distance(end_point))
+        closer_endpoint = min(ab_start, ab_end, key=lambda p: p.distance(end_point))
 
-        extension_distance = min(max_extension, end_point.distance(farther_endpoint))
+        extension_distance = min(max_extension, end_point.distance(closer_endpoint))
         if extension_distance > 0.01:
             last_segment = LineString([route._path[-2], route._path[-1]])
             direction = geom_tools.direction_of_line(last_segment)
