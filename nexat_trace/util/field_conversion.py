@@ -23,7 +23,6 @@ from nexat_trace.shared.exceptions import GraphConstructionError
 from nexat_trace.shared.planning_messages import PlanningMsg
 from nexat_trace.track_system import TrackSystem
 from nexat_trace.util import geom_tools as gt
-from debug_visuals import Visualizer
 
 
 def get_target_headland_from_track_system(
