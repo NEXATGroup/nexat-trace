@@ -134,7 +134,7 @@ class TrackGraph:
                 print(f"Found headland index {headland_index} for path")
                 print(f"Nodes of the last path: {[node.index for node in route]}")
 
-            if last_known_path_headland_index is not None and headland_index != headland_index:
+            if last_known_path_headland_index is not None and headland_index != last_known_path_headland_index:
                 if route_params.debug_prints:
                     print(
                         """
@@ -1004,6 +1004,7 @@ class TrackGraph:
 
         # else check the run of the projection along the path and decide that way
         # this is edge case handling for path segments circling a cutout
+        # well this should run into problems, if we have a self overlapping path segment
         projection_fits = (
             path_segment.project(candidate[0].position) <
             path_segment.project(candidate[1].position)
