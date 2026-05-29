@@ -309,7 +309,7 @@ class Route:
                 # insert ab line (substring) into curve coords
                 ab_line: LineString = mixed_path[i + 1].get_ab_line()
                 if len(ab_line.coords) > 2:
-                    ab_line = gt.erode_line_string(ab_line, self._route_params.vehicle_turning_radius)
+                    ab_line = gt.erode_line_string(ab_line, self._route_params.vehicle_turning_radius * 2)
 
                 start_projection = 0.0
                 if i > 1:
