@@ -844,14 +844,13 @@ def working_corridor_of_ab_line(
         return None
 
 
-# still needs some thought, if I want to return to that later.
 def get_corridor_line(
     ab_line: LineString,
     working_width: float,
     turning_headland: LinearRing,
     inner_border: LinearRing | Polygon | MultiPolygon,
     implement_working_offset: float = 0.0
-) -> LineString:
+) -> LineString | None:
     """Returns the working corridor line of an ab line within a turning headland.
 
     Calculates the working corridor line. This respects the working width and the turning headland geometry.
