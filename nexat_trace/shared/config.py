@@ -23,8 +23,9 @@ class PostSteps(Enum):
     Enum for post processing step procedures.
     """
 
-    CUTOUT_AVOIDANCE = 0        # runs first
-    AB_LINE_INTERPOLATION = 1   # runs last
+    CUTOUT_AVOIDANCE = 0  # runs first
+    EXTEND_START_END = 1
+    AB_LINE_INTERPOLATION = 2  # runs last
 
 
 class RoutePlanningConfig:
@@ -77,12 +78,12 @@ class RoutePlanningConfig:
         Wether or not the route optimization should see the route as a round trip from start point back to start point
         instead of some other end point
     - starting_point:
-        Starting point for the route as Point in utm coords or node id. If no start or end point is given the route will lead
+        Starting point for the route as Point in utm/ENU coords or node id. If no start or end point is given the route will lead
         from nodes nearest to top left to bottom right corner of track system bounding box.
     - finish_point:
-        finish point for the route. Will only be used if round_trip_route is False. As Point in utm coords or node id.
+        finish point for the route. Will only be used if round_trip_route is False. As Point in utm/ENU coords or node id.
     - working_mask_start:
-        Point in utm coords or node id. If given, starting point determines the mask of ab lines for working width > track
+        Point in utm/ENU coords or node id. If given, starting point determines the mask of ab lines for working width > track
         width. Working width mask will be determined automatically if None by maximum overlap of coverage vs least ab lines
         driven.
     - post_processing_steps:
@@ -104,9 +105,12 @@ class RoutePlanningConfig:
         Time in s that is added to time calculation on a driving direction change
     - speed_curve_angle_threshold:
         Angle value in rad above which a path segment is considered a 'curve' during vehicle driving time calculation.
-    - direction_change_extension_distance:
+    - direction_change_extension_distance_steer:
         Distance in m that is appended to a path segment in a straight line on a direction change maneuver.
         Used for the vehicle to get some space to steer
+    - direction_change_extension_distance_brake:
+        Distance in m that is appended to a path segment in a straight line on a direction change maneuver.
+        Used for the vehicle to get some space to brake
     - working_corridor_extension:
         Boolean indicating whether direction change extension should be applied to working corridor calculation.
     - direct_curve_link_distance:
@@ -227,10 +231,10 @@ class RoutePlanningConfig:
         # instead of some other end point
         self.round_trip_route: bool = True
 
-        # starting point for the route as Point in utm coords or node id
+        # starting point for the route as Point in utm/ENU coords or node id
         self.starting_point: Point | int | None = None
         # finish point for the route will only be used if round_trip_route is False
-        # as Point in utm coords or node id
+        # as Point in utm/ENU coords or node id
         self.finish_point: Point | int | None = None
 
         # wether or not to use the starting point to determine the mask of ab lines for
@@ -244,7 +248,7 @@ class RoutePlanningConfig:
         # ----------- POSTPROCESSING PARAMETERS ------------ #
         #
 
-        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE]
+        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE, PostSteps.EXTEND_START_END]
 
         self.post_processing_steps = {}
         for step in PostSteps:
@@ -271,7 +275,8 @@ class RoutePlanningConfig:
         self.vehicle_speed_curve = 2.08  # m/s -> 7,5km/h
         self.speed_curve_angle_threshold = 0.0001
 
-        self.direction_change_extension_distance = 7.0  # m
+        self.direction_change_extension_distance_steer = 9.0  # m
+        self.direction_change_extension_distance_brake = 14.0  # m
         self.working_corridor_extension = False
         self.heuristic_corridor_angle = 0.0  # fraction of π rad (0.5π = 90°)
 
@@ -320,7 +325,8 @@ class RoutePlanningConfig:
         new.vehicle_speed_straight = self.vehicle_speed_straight
         new.vehicle_speed_curve = self.vehicle_speed_curve
         new.speed_curve_angle_threshold = self.speed_curve_angle_threshold
-        new.direction_change_extension_distance = self.direction_change_extension_distance
+        new.direction_change_extension_distance_steer = self.direction_change_extension_distance_steer
+        new.direction_change_extension_distance_brake = self.direction_change_extension_distance_brake
         new.working_corridor_extension = self.working_corridor_extension
         new.heuristic_corridor_angle = self.heuristic_corridor_angle
         new.direct_curve_link_distance = self.direct_curve_link_distance

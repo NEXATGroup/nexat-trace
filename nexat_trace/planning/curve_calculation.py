@@ -2,7 +2,7 @@ import math
 from math import pi
 from typing import Dict, List
 
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, Point, Polygon, STRtree
+from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, STRtree
 from shapely.ops import nearest_points
 
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
@@ -25,7 +25,7 @@ def connect_ab_lines(
         to_index: int,
         headlands: List[LinearRing],
         field_border: LinearRing,
-        inner_field_border: LinearRing,
+        inner_field_border: LinearRing | Polygon | MultiPolygon,
         allow_headland_hop = True,
         circled_cutouts: Dict[int, bool] = None) -> Curve:
     """
@@ -144,10 +144,14 @@ def connect_ab_lines(
         is_at_cutout,
         route_params
     )
+    curve1_end_projection = headland_segment.project(Point(curve1.path.coords[-1]))
+    headland_segment_to = gt.substring(headland_segment, curve1_end_projection, headland_segment.length)
+    if isinstance(headland_segment_to, Point):
+        headland_segment_to = gt.substring(headland_segment, 0.9, 1, True)
 
     curve2 = search_curve_to_ab(
         to_segment,
-        headland_segment,
+        headland_segment_to,
         headland_shape,
         field_border,
         inner_field_border,
@@ -285,6 +289,9 @@ def connect_ab_lines(
     if route_params.debug_prints and not valid:
         print("connect_ab_lines() was not valid")
 
+    # if not gt.check_segmentation(points, headland_shape, "connect_ab_lines()", from_segment, to_segment):
+    #     print("Segmentation check failed for connect_ab_lines()")
+
     curve_type = Curve.get_dominant_curve_type(curve1, curve2)
     return Curve(points, curve_type, valid)
 
@@ -375,8 +382,8 @@ def trace_headland_hop(
                 headlands,
                 field_border,
                 inner_field_border,
-                False,
-                circled_cutouts
+                allow_headland_hop=False,
+                circled_cutouts=circled_cutouts
             )
             part1_line = LineString(part1.path)
 
@@ -421,6 +428,14 @@ def trace_headland_hop(
                 part2_line = LineString(part2.path)
 
             route_params.corridor_strategy = last_fill_corridors
+            # if not gt.check_segmentation(
+            #     list(part1.path.coords) + list(part2.path.coords),
+            #     from_headland,
+            #     "trace_headland_hop()",
+            #     from_node.get_ab_line(),
+            #     nodes[to_index].get_ab_line(),
+            # ):
+            #     print("Segmentation check failed for headland hop")
             return Curve(
                 list(part1.path.coords) + list(part2.path.coords),
                 CurveType.U_TURN,
@@ -475,7 +490,7 @@ def trace_neighbor_curve(
     headland = gt.ring_with_origin_at(
         headland,
         headland.interpolate(
-            headland.project(crossing_point_1) - route_params.direction_change_extension_distance * 5
+            headland.project(crossing_point_1) - route_params.direction_change_extension_distance_steer * 5
         )
     )
 
@@ -483,10 +498,10 @@ def trace_neighbor_curve(
     headland_segment = gt.get_substring_on_linearring(
         headland,
         headland.interpolate(
-            headland.project(crossing_point_1) - route_params.direction_change_extension_distance * 5
+            headland.project(crossing_point_1) - route_params.direction_change_extension_distance_steer * 5
         ),
         headland.interpolate(
-            headland.project(crossing_point_2) + route_params.direction_change_extension_distance * 5
+            headland.project(crossing_point_2) + route_params.direction_change_extension_distance_steer * 5
         )
     )
 
@@ -529,7 +544,7 @@ def trace_neighbor_curve(
         headland.interpolate(
             headland.project(
                 Point(headland_connection_middle.coords[0])
-            ) + route_params.direction_change_extension_distance
+            ) + route_params.direction_change_extension_distance_steer
         )
     )
 
@@ -538,7 +553,7 @@ def trace_neighbor_curve(
         headland.interpolate(
             headland.project(
                 Point(headland_connection_middle.coords[-1])
-            ) - route_params.direction_change_extension_distance
+            ) - route_params.direction_change_extension_distance_steer
         ),
         Point(headland_connection_middle.coords[-1])
     )
@@ -557,6 +572,9 @@ def trace_neighbor_curve(
         + list(curve2.path.coords)
     )
     path = [Point(coord) for coord in combined_coords]
+
+    # if not gt.check_segmentation(path, headland, "trace_neighbour_curve()", from_segment, to_segment):
+    #     print("Segmentation check failed for neighbor curve")
     return Curve(path, CurveType.PI_CURVE, True)
 
 
@@ -565,7 +583,7 @@ def search_curve_to_headland(
         headland_segment: LineString,
         headland_ring: LineString,
         field_border: LinearRing,
-        inner_field_border: LinearRing,
+        inner_field_border: LinearRing | Polygon | MultiPolygon,
         is_at_cutout: bool,
         route_params: RoutePlanningConfig,
         metrics: EdgeMetrics = None) -> Curve:
@@ -635,6 +653,9 @@ def search_curve_to_headland(
     if not path.dwithin(headland_ring, 0.1):
         path = gt.extend_line_in_bounds(path, headland_ring, extend_back=False)
 
+    # if not gt.check_segmentation(path, headland_ring, "search_curve_to_headland", ab_line, headland_segment):
+    #     print("Segmentation check failed for curve to headland")
+
     return Curve(path, curve_type, valid)
 
 
@@ -643,7 +664,7 @@ def search_curve_to_ab(
         headland_segment: LineString,
         headland_ring: LineString,
         field_border: LinearRing,
-        inner_field_border: LinearRing,
+        inner_field_border: LinearRing | Polygon | MultiPolygon,
         is_at_cutout: bool,
         route_params: RoutePlanningConfig,
         metrics: EdgeMetrics = None) -> Curve:
@@ -714,6 +735,9 @@ def search_curve_to_ab(
     if not path.dwithin(headland_ring, 0.1):
         path = gt.extend_line_in_bounds(path, headland_ring, extend_front = False)
 
+    # if not gt.check_segmentation(path, headland_ring, "search_curve_to_ab()", ab_line, headland_segment):
+    #     print("Segmentation check failed for curve to ab")
+
     return Curve(path, curve_type, valid)
 
 
@@ -726,6 +750,20 @@ def get_simple_turn_to_ab(
     """
     Returns the path connecting the end of an ab line to the given headland segment if a simple turn fits between the segments.
     """
+    target_tangent = gt.get_tangent_at_nearest_point(ab_line.interpolate(1.0, True), headland_ring)
+    # TODO calculate with turning radius
+    if abs(gt.angle_between_lines(ab_line, target_tangent)) < pi / 10.0 and target_tangent.dwithin(ab_line, 0.5):
+        start_point = headland_segment.interpolate(
+            headland_segment.length - 5.0
+        )
+        return LineString(
+            [
+                start_point,
+                headland_ring.interpolate(
+                    headland_ring.project(Point(ab_line.coords[-1]))
+                )
+            ]
+        )
 
     curve: LineString | None = None
     if not route_params.robust_curve_calculation_only:
@@ -756,8 +794,10 @@ def get_simple_turn_to_ab(
             extended_headland_segment,
             ab_line,
             route_params.vehicle_turning_radius,
-            current_point=curve_start,
-            bounds=field_border
+            curve_start,
+            field_border,
+            headland_ring,
+            False
         )
 
         candidate_index += 1
@@ -770,6 +810,12 @@ def get_simple_turn_to_ab(
             next_candidate = curve_start_candidates[candidate_index]
 
     if curve is None or curve.length > route_params.vehicle_turning_radius * math.pi:
+        in_vector = gt.substring(headland_segment, 0.9, 1, True)
+        out_vector = gt.substring(ab_line, 0, 0.1, True)
+        if gt.angle_between_lines(in_vector, out_vector) < pi / 20.0:
+            curve = gt.dubins_between_vectors(in_vector, out_vector, route_params.vehicle_turning_radius)
+            if curve is not None and curve.length < route_params.vehicle_turning_radius * math.pi:
+                return curve
         return None
 
     return curve
@@ -832,8 +878,10 @@ def get_simple_turn_to_headland(
                 ab_line,
                 headland_segment,
                 route_params.vehicle_turning_radius,
-                current_point=curve_start,
-                bounds=field_border
+                curve_start,
+                field_border,
+                headland_ring,
+                True
             )
             curve_start_projection -= 0.1
 
@@ -1029,6 +1077,8 @@ def trace_curve(
                 False
             )
 
+    # if not gt.check_segmentation(LineString(coords), headland_shape, "trace_curve", ab_segment, headland_segment):
+    #     print("Segmentation, where there should be none.")
     points = [Point(c) for c in coords]
     return Curve(points, CurveType.UNDEFINED, True)
 
@@ -1050,7 +1100,7 @@ def insert_hook_stops_to_ab(
     )
     if working_corridor.length - curve_end_projection > route_params.corridor_threshold:
         extension_point = working_corridor.interpolate(
-            working_corridor.project(curve_end) + route_params.direction_change_extension_distance
+            working_corridor.project(curve_end) + route_params.direction_change_extension_distance_steer
         )
         points.append(extension_point)
 
@@ -1063,7 +1113,7 @@ def insert_hook_stops_to_ab(
                 working_corridor = gt.extend_line_in_bounds(
                     working_corridor,
                     Polygon(turning_headland),
-                    route_params.direction_change_extension_distance,
+                    route_params.direction_change_extension_distance_brake,
                     extend_front=False,
                     extend_back=True,
                 )
@@ -1100,7 +1150,7 @@ def insert_hook_stops_to_headland(
         backup_point = working_corridor.interpolate(
             working_corridor.project(
                 curve_start
-            ) - route_params.direction_change_extension_distance
+            ) - route_params.direction_change_extension_distance_steer
         )
         points.insert(0, backup_point)
         if working_corridor is None or not isinstance(working_corridor, LineString) or working_corridor.length < 0.01:
@@ -1111,7 +1161,7 @@ def insert_hook_stops_to_headland(
             working_corridor = gt.extend_line_in_bounds(
                 working_corridor,
                 Polygon(turning_headland),
-                route_params.direction_change_extension_distance,
+                route_params.direction_change_extension_distance_brake,
                 extend_front=True,
                 extend_back=False,
             )

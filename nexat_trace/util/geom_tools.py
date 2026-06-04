@@ -241,6 +241,34 @@ def erode_linearring(ring: LinearRing, radius: float) -> LinearRing:
     return new_ring
 
 
+def erode_polygon_inwards(poly: Polygon, radius: float) -> Polygon:
+    """
+    Smooths the Polygon to be drivable for the vehicle.
+
+    Erodes the given polygon by buffering inwards once, outwards once
+    to smooth all vertices in the geometry to the given radius.
+
+    """
+    buffer = poly.buffer(
+                -1.0 * radius,
+                join_style="round",
+                resolution=45
+            )
+    buffer = buffer.buffer(
+        +1.0 * radius,
+        join_style="round",
+        resolution=45
+    )
+
+    if isinstance(buffer, MultiPolygon):  # TODO handle this case better
+        buffer = max(buffer.geoms, key=lambda poly: poly.area)
+
+    if not isinstance(buffer, Polygon):
+        raise ValueError("Failed to smooth headland ring in one piece")
+
+    return buffer
+
+
 T = TypeVar('T')
 
 
@@ -478,6 +506,8 @@ def dubins_between_segments(
         turning_radius: float,
         current_point: Point = None,
         bounds: LinearRing = None,
+        headland_ring: LinearRing = None,
+        ab_is_current_line: bool = False,
         extend_start_line: bool = True) -> LineString | None:
     """
     Return a dubins curve between two line segments.
@@ -537,16 +567,26 @@ def dubins_between_segments(
         return None
 
     ipol_candidates = []
+    # TODO find a better check. This might have problems with very short ab's and the outermost headland ring.
+    if headland_ring is not None:
+        poly_head_ring = Polygon(headland_ring)
+        line_to_check = current_line if ab_is_current_line else target_line
+        intersection = poly_head_ring.intersection(line_to_check)
+        is_current_line_contained = (
+            intersection.length / line_to_check.length > 0.3
+            if line_to_check.length > 0
+            else poly_head_ring.contains(line_to_check)
+        )
     for intersection_point in intersection_points_buffer.geoms:
         ipol_current = current_line_extended.interpolate(current_line_extended.project(intersection_point))
         ipol_target = target_line_extended.interpolate(target_line_extended.project(intersection_point))
 
-        if (current_line_extended.project(ipol_current)
-                < current_line_extended.project(nearest_intersection_point_to_point)
-                and target_line_extended.project(ipol_target)
-                > target_line_extended.project(nearest_intersection_point_to_point)
-                and current_line_extended.project(ipol_current) - current_point_projection > 0
-                or intersection_point_line.is_empty):
+        if intersection_point_line.is_empty or (
+            current_line_extended.project(ipol_current) < current_line_extended.project(nearest_intersection_point_to_point)
+            and target_line_extended.project(ipol_target) > target_line_extended.project(nearest_intersection_point_to_point)
+            and current_line_extended.project(ipol_current) - current_point_projection > 0
+            and (poly_head_ring.contains(intersection_point) == is_current_line_contained or headland_ring is None)
+        ):
             ipol_candidates.append(
                 (
                     current_line_extended.project(ipol_current) - current_point_projection,
@@ -559,32 +599,43 @@ def dubins_between_segments(
     if ipol_candidates == []:
         return None
 
-    _, intersection_point, ipol_current, ipol_target = ipol_candidates.pop(0)
+    for _, _, ipol_current, ipol_target in ipol_candidates:
+        current_segment_new_coords = substring(
+            current_line_extended,
+            0.0,
+            current_line_extended.project(ipol_current)
+        ).coords[-2:]
 
-    current_segment_new_coords = substring(
-        current_line_extended,
-        0.0,
-        current_line_extended.project(ipol_current)
-    ).coords[-2:]
+        if len(current_segment_new_coords) < 2:
+            continue
+        try:
+            current_segment = LineString(current_segment_new_coords)
 
-    if len(current_segment_new_coords) < 2:
-        return None
+            target_segment = LineString(
+                substring(
+                    target_line_extended,
+                    target_line_extended.project(ipol_target),
+                    target_line_extended.length
+                ).coords[:2]
+            )
+        except Exception:
+            continue
+        current_vector = LineString((current_segment.boundary.geoms[0], ipol_current))
+        target_vector = LineString((ipol_target, target_segment.boundary.geoms[-1]))
+        if abs(angle_between_lines(current_vector, current_line)) > pi:
+            continue
+        if abs(angle_between_lines(target_vector, target_line)) > pi:
+            continue
 
-    current_segment = LineString(current_segment_new_coords)
+        candidate_turning_radius = turning_radius
+        if abs(angle_between_lines(current_vector, target_vector)) < pi / 4:
+            candidate_turning_radius -= 0.5
+        path = dubins_between_vectors(current_vector, target_vector, candidate_turning_radius)
+        if path is not None and path.length > turning_radius * pi:
+            continue
+        return path
 
-    target_segment = LineString(
-        substring(
-            target_line_extended,
-            target_line_extended.project(ipol_target),
-            target_line_extended.length
-        ).coords[:2]
-    )
-    current_vector = LineString((current_segment.boundary.geoms[0], ipol_current))
-    target_vector = LineString((ipol_target, target_segment.boundary.geoms[-1]))
-    if abs(angle_between_lines(current_vector, target_vector)) < pi / 4:
-        turning_radius -= 0.5
-    path = dubins_between_vectors(current_vector, target_vector, turning_radius)
-    return path
+    return None
 
 
 def turn_to_segment(
@@ -748,3 +799,32 @@ def union_intersecting_geoms(geometries: List[BaseGeometry]) -> List[Polygon]:
         return union_intersecting_geoms(grouped_geoms)
 
     return grouped_geoms
+
+
+def check_segmentation(path: List[Point] | LineString | List[LineString],
+                       turning_headland: LinearRing | LineString,
+                       function_string: str,
+                       geom_from: BaseGeometry | None = None,
+                       geom_to: BaseGeometry | None = None) -> bool:
+    """Checks if the given path is segmeted correclty."""
+    segments = []
+    if isinstance(path, list) and (isinstance(path[0], Tuple) or path[0].geom_type == "Point"):
+        path = LineString(path)
+        segments, _ = segment_line(path, radius_threshold=1.35)
+    elif isinstance(path, list) and path[0].geom_type == "LineString":
+        segments = path
+    elif isinstance(path, LineString):
+        segments, _ = segment_line(path, radius_threshold=1.35)
+    for i in range(len(segments) - 1):
+        is_same_start_stop = segments[i].boundary.geoms[-1].distance(segments[i + 1].boundary.geoms[0]) < 1e-9
+        is_direction_change = abs(
+            angle_between_lines(LineString(segments[i].coords[-2:]), LineString(segments[i + 1].coords[:2]))
+            ) > 0.95 * pi
+        if not is_same_start_stop or not is_direction_change:
+            path_start_dist = path.project(segments[i].boundary.geoms[-1])
+            path_end_dist = path.project(segments[i + 1].boundary.geoms[0])
+            path_between = substring(path, path_start_dist, path_end_dist)
+            path_between = path_between  # to fix ruff errors
+            print("Segmented path is not segmented correctly")
+            return False
+    return True

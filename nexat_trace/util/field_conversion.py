@@ -44,11 +44,42 @@ def get_target_headland_from_track_system(
         if config.working_width >= 5 * config._track_width:
             target_headland = 3
 
-    is_target = target_headland < len(track_system.headlands)
-    rings = track_system.headlands[min(len(track_system.headlands) - 1, target_headland)]
+    is_target = target_headland < len(track_system.headland_config)
 
-    rounded_rings = [gt.erode_linearring(ring, config.vehicle_turning_radius) for ring in rings]
+    ring_index = min(len(track_system.headlands) - 1, target_headland)
+    headland_prep = _get_headland_prep(track_system, config)
 
+    border_poly = track_system.outer_border
+    rings = []
+    _offset = round(track_system.outer_border.exterior.distance(track_system.headlands[0][0]) - headland_prep[0], 1)
+    headland_prep_sum = sum(headland_prep[:ring_index + 1]) + _offset
+    outer = Polygon(border_poly.exterior).buffer(-1 * headland_prep_sum, resolution=45, cap_style=2, join_style=2)
+    rings.append(gt.erode_linearring(outer.exterior, config.vehicle_turning_radius))
+    for inner in border_poly.interiors:
+        if Polygon(inner).area > 200.0:
+            inner = inner.buffer(headland_prep_sum, resolution=45, cap_style=2, join_style=2)
+            inner = gt.erode_linearring(inner.exterior, config.vehicle_turning_radius)
+            rings.append(inner)
+
+    outer = Polygon(rings[0])
+    holes = rings[1:]
+
+    # Iteratively subtract intersecting holes
+    changed = True
+    while changed:
+        changed = False
+        remaining = []
+        for hole in holes:
+            if outer.exterior.intersects(hole):
+                outer = outer.difference(Polygon(hole))
+                changed = True  # shape changed, need to re-check remaining holes
+            else:
+                remaining.append(hole)
+        holes = remaining
+
+    poly = gt.erode_polygon_inwards(outer, config.vehicle_turning_radius)
+    poly = poly.simplify(1e-3, preserve_topology=True)
+    rounded_rings = [poly.exterior] + list(poly.interiors) + holes
     return rounded_rings, is_target
 
 
@@ -341,9 +372,38 @@ def simplify_ab_lines(
                 closest_before = max(before, key=lambda p: xl.project(p))
                 closest_after = min(after, key=lambda p: xl.project(p))
                 xl_to_headland = gt.substring(xl, xl.project(closest_before), xl.project(closest_after))
+            else:
+                # centroid is outside the field — fall back to Hausdorff distance over all consecutive segments
+                # we might want to remove it again and just demand ab cut to the field border already
+                xl_intersections.sort(key=lambda p: xl.project(p))
+                best_seg = None
+                best_hausdorff = float('inf')
+                for k in range(len(xl_intersections) - 1):
+                    seg = gt.substring(xl, xl.project(xl_intersections[k]), xl.project(xl_intersections[k + 1]))
+                    dist = seg.hausdorff_distance(line_1)
+                    if dist < best_hausdorff:
+                        best_hausdorff = dist
+                        best_seg = seg
+                if best_seg is not None:
+                    xl_to_headland = best_seg
 
+        elif len(xl_intersections) == 1:
+            print("Tangente")
+        elif xl_intersections == 0:
+            simplify_pairs.add(i)
+            if route_params.debug_prints:
+                print(f"Removing ab line {line_1} because its extension doesn't intersect the headland")
+            continue
         best_replacement = None
         best_dist = float('inf')
+
+        if xl_to_headland is None:
+            if route_params.debug_prints:
+                print("xl to headland is None, this should not happen")
+                print(f"Removing ab line {line_1} because its extension doesn't intersect the headland")
+                # removes the problematic line instead of crashing. Relevant ab lines might not be worked.
+            simplify_pairs.add(i)
+            continue
 
         for ii in range(i + 1, len(old_ab_lines)):
             line_2 = old_ab_lines[ii]
@@ -559,12 +619,7 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
         if ((route_params.working_width % (mh)) <= mh / 2)
         else (route_params.working_width - (route_params.working_width % (mh)) + (mh))
     )
-    for i, value in enumerate(track_system.headland_config):
-        head_width = value * route_params._track_width
-        if i == 0:
-            head_width /= 2
-        headland_prep.append(head_width)
-    headland_prep.append(0.5 * route_params._track_width)
+    headland_prep = _get_headland_prep(track_system, route_params)
     if route_params.last_driven_headland_index is not None and route_params.last_driven_headland_index < len(
         track_system.headlands
     ):
@@ -587,11 +642,22 @@ def get_inner_border_from_track_system(track_system: TrackSystem, route_params: 
                 offs = temp
         outer_headland_rings = track_system.headlands[0]  # TODO make this support multi part fields
         outer_headland_poly = Polygon(outer_headland_rings[0], outer_headland_rings[1:])
-        inner_border = outer_headland_poly.buffer((sum(headland_prep[1:]) + offs) * -1, resolution=20, cap_style=2, join_style=2)
+        inner_border = outer_headland_poly.buffer((sum(headland_prep[1:]) + offs) * -1, resolution=40, cap_style=2, join_style=2)
 
     if isinstance(inner_border, Polygon):
         inner_border = MultiPolygon([inner_border])
     return inner_border
+
+
+def _get_headland_prep(track_system: TrackSystem, route_params: RoutePlanningConfig) -> list[float | None]:
+    headland_prep = []
+    for i, value in enumerate(track_system.headland_config):
+        head_width = value * route_params._track_width
+        if i == 0:
+            head_width /= 2
+        headland_prep.append(head_width)
+    headland_prep.append(0.5 * route_params._track_width)
+    return headland_prep
 
 
 def get_headland_index_of_path_on_track_system(path: LineString | MultiLineString, track_system: TrackSystem) -> int | None:
@@ -781,7 +847,7 @@ def get_corridor_line(
     ab_line: LineString,
     working_width: float,
     turning_headland: LinearRing,
-    inner_border: LinearRing | Polygon,
+    inner_border: LinearRing | Polygon | MultiPolygon,
     implement_working_offset: float = 0.0
 ) -> LineString | None:
     """Returns the working corridor line of an ab line within a turning headland.
@@ -791,23 +857,33 @@ def get_corridor_line(
     headland_poly = Polygon(turning_headland)
     min_width = 0.0001
     half_width = working_width / 2.0 - min_width
-    inner_border_poly = Polygon(inner_border)
+
+    # Resolve MultiPolygon to a single Polygon covering all parts near the ab_line
+    if isinstance(inner_border, MultiPolygon):
+        touching = [poly for poly in inner_border.geoms if poly.distance(ab_line) < 1e-4]
+        if len(touching) > 1:
+            inner_border = unary_union(touching).convex_hull
+        elif len(touching) == 1:
+            inner_border = touching[0]
+        else:
+            inner_border = min(inner_border.geoms, key=lambda poly: poly.distance(ab_line))
+
+    inner_border_poly = inner_border if isinstance(inner_border, Polygon) else Polygon(inner_border)
 
     def get_intersection_line_savely(line: LineString, polygon: Polygon) -> LineString | None:
         """Gets the intersection between a line and a polygon and ensure it returns a LineString."""
         intersection = line.intersection(polygon, grid_size=0)
         if isinstance(intersection, MultiLineString):
-            for i in range(len(intersection.geoms)):
-                # For some reason, sometimes line geometries with length of about 10^-10 are created
-                if intersection.geoms[i].length > 0.1:
-                    return intersection.geoms[i]
+            # Return the longest segment to avoid picking a spurious short fragment
+            candidates = [g for g in intersection.geoms if g.length > 0.1]
+            if candidates:
+                return max(candidates, key=lambda g: g.length)
         elif isinstance(intersection, LineString):
             return intersection
         elif isinstance(intersection, GeometryCollection):
-            # I can't believe I have to do this, but intersection at hole produced this for no discernable reason
-            for geom in intersection.geoms:
-                if isinstance(geom, LineString) and geom.length > 0.1:
-                    return geom
+            candidates = [g for g in intersection.geoms if isinstance(g, LineString) and g.length > 0.1]
+            if candidates:
+                return max(candidates, key=lambda g: g.length)
         else:
             return None
 
