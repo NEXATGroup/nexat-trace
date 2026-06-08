@@ -250,10 +250,10 @@ def erode_polygon_inwards(poly: Polygon, radius: float) -> Polygon:
 
     """
     buffer = poly.buffer(
-                -1.0 * radius,
-                join_style="round",
-                resolution=45
-            )
+        -1.0 * radius,
+        join_style="round",
+        resolution=45
+    )
     buffer = buffer.buffer(
         +1.0 * radius,
         join_style="round",
@@ -799,32 +799,3 @@ def union_intersecting_geoms(geometries: List[BaseGeometry]) -> List[Polygon]:
         return union_intersecting_geoms(grouped_geoms)
 
     return grouped_geoms
-
-
-def check_segmentation(path: List[Point] | LineString | List[LineString],
-                       turning_headland: LinearRing | LineString,
-                       function_string: str,
-                       geom_from: BaseGeometry | None = None,
-                       geom_to: BaseGeometry | None = None) -> bool:
-    """Checks if the given path is segmeted correclty."""
-    segments = []
-    if isinstance(path, list) and (isinstance(path[0], Tuple) or path[0].geom_type == "Point"):
-        path = LineString(path)
-        segments, _ = segment_line(path, radius_threshold=1.35)
-    elif isinstance(path, list) and path[0].geom_type == "LineString":
-        segments = path
-    elif isinstance(path, LineString):
-        segments, _ = segment_line(path, radius_threshold=1.35)
-    for i in range(len(segments) - 1):
-        is_same_start_stop = segments[i].boundary.geoms[-1].distance(segments[i + 1].boundary.geoms[0]) < 1e-9
-        is_direction_change = abs(
-            angle_between_lines(LineString(segments[i].coords[-2:]), LineString(segments[i + 1].coords[:2]))
-            ) > 0.95 * pi
-        if not is_same_start_stop or not is_direction_change:
-            path_start_dist = path.project(segments[i].boundary.geoms[-1])
-            path_end_dist = path.project(segments[i + 1].boundary.geoms[0])
-            path_between = substring(path, path_start_dist, path_end_dist)
-            path_between = path_between  # to fix ruff errors
-            print("Segmented path is not segmented correctly")
-            return False
-    return True

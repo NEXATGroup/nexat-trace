@@ -195,7 +195,6 @@ def get_route(routing,
 
     inner_border = None
     if isinstance(track_graph.inner_border, MultiPolygon):
-        # TODO implement actual multi inner border support
         inner_geoms = list(track_graph.inner_border.geoms)
         inner_geoms.sort(key=lambda g: g.area, reverse=True)
         inner_border = inner_geoms[0]
@@ -521,7 +520,6 @@ def navigate_from_to(
         raise TypeError("Start and target geometries have to be Point or LineString")
 
     track_graph = net_graph.track_graph
-    # TODO implement actual multi inner border support
     inner_geoms = list(track_graph.inner_border.geoms)
     inner_geoms.sort(key=lambda g: g.area, reverse=True)
     inner_border = inner_geoms[0]

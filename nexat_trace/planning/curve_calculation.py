@@ -289,9 +289,6 @@ def connect_ab_lines(
     if route_params.debug_prints and not valid:
         print("connect_ab_lines() was not valid")
 
-    # if not gt.check_segmentation(points, headland_shape, "connect_ab_lines()", from_segment, to_segment):
-    #     print("Segmentation check failed for connect_ab_lines()")
-
     curve_type = Curve.get_dominant_curve_type(curve1, curve2)
     return Curve(points, curve_type, valid)
 
@@ -428,14 +425,7 @@ def trace_headland_hop(
                 part2_line = LineString(part2.path)
 
             route_params.corridor_strategy = last_fill_corridors
-            # if not gt.check_segmentation(
-            #     list(part1.path.coords) + list(part2.path.coords),
-            #     from_headland,
-            #     "trace_headland_hop()",
-            #     from_node.get_ab_line(),
-            #     nodes[to_index].get_ab_line(),
-            # ):
-            #     print("Segmentation check failed for headland hop")
+
             return Curve(
                 list(part1.path.coords) + list(part2.path.coords),
                 CurveType.U_TURN,
@@ -573,8 +563,6 @@ def trace_neighbor_curve(
     )
     path = [Point(coord) for coord in combined_coords]
 
-    # if not gt.check_segmentation(path, headland, "trace_neighbour_curve()", from_segment, to_segment):
-    #     print("Segmentation check failed for neighbor curve")
     return Curve(path, CurveType.PI_CURVE, True)
 
 
@@ -652,9 +640,6 @@ def search_curve_to_headland(
 
     if not path.dwithin(headland_ring, 0.1):
         path = gt.extend_line_in_bounds(path, headland_ring, extend_back=False)
-
-    # if not gt.check_segmentation(path, headland_ring, "search_curve_to_headland", ab_line, headland_segment):
-    #     print("Segmentation check failed for curve to headland")
 
     return Curve(path, curve_type, valid)
 
@@ -734,9 +719,6 @@ def search_curve_to_ab(
 
     if not path.dwithin(headland_ring, 0.1):
         path = gt.extend_line_in_bounds(path, headland_ring, extend_front = False)
-
-    # if not gt.check_segmentation(path, headland_ring, "search_curve_to_ab()", ab_line, headland_segment):
-    #     print("Segmentation check failed for curve to ab")
 
     return Curve(path, curve_type, valid)
 
@@ -1077,8 +1059,6 @@ def trace_curve(
                 False
             )
 
-    # if not gt.check_segmentation(LineString(coords), headland_shape, "trace_curve", ab_segment, headland_segment):
-    #     print("Segmentation, where there should be none.")
     points = [Point(c) for c in coords]
     return Curve(points, CurveType.UNDEFINED, True)
 

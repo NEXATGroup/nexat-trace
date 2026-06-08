@@ -387,8 +387,8 @@ def simplify_ab_lines(
                 if best_seg is not None:
                     xl_to_headland = best_seg
 
-        elif len(xl_intersections) == 1:
-            print("Tangente")
+        elif len(xl_intersections) == 1 and route_params.debug_prints:
+            print("Tangente in simplify ab lines.")
         elif xl_intersections == 0:
             simplify_pairs.add(i)
             if route_params.debug_prints:
