@@ -1,7 +1,7 @@
 from math import pi
 from typing import List
 
-from shapely import LinearRing, LineString, Point, Polygon, STRtree
+from shapely import LinearRing, LineString, MultiPolygon, Point, Polygon, STRtree
 
 from nexat_trace.planning.track_graph.edge_metrics import EdgeMetrics
 from nexat_trace.planning.track_graph.track_graph_node import TrackGraphNode
@@ -153,7 +153,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             target_node: TrackGraphNode,
             metrics: EdgeMetrics,
             ab_line: LineString,
-            inner_border: LinearRing,
+            inner_border: LinearRing | Polygon | MultiPolygon,
             headland_ring: LinearRing,
             route_params: RoutePlanningConfig):
         """
@@ -254,7 +254,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             # distance of pi turn maneuver
             metrics.distance += pi * route_params.vehicle_turning_radius  # 2 * 1/4 circle circumference
             metrics.distance += route_params._track_width * 2.0
-            metrics.distance += route_params.direction_change_extension_distance * 2.0
+            metrics.distance += route_params.direction_change_extension_distance_brake * 2.0
 
         # angle calculation
         if line1 is not None and line2 is not None:
