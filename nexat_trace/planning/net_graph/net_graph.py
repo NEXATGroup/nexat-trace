@@ -1,5 +1,5 @@
 from collections import defaultdict
-from math import pi
+from math import pi, sin
 from typing import Dict, List, Tuple
 
 from shapely import LineString, MultiPolygon, Polygon
@@ -59,7 +59,8 @@ class NetGraph:
                 [node.index for node in self.working_subset_track_nodes],
                 Weights(Weights.GRAPH_BUILDING),
                 True,
-                min(limit, subset_len - 1)
+                min(limit, subset_len - 1),
+                route_params.vehicle_turning_radius
             )
 
         # Set edges for ab lines
@@ -328,6 +329,7 @@ class NetGraph:
             weights: Weights | None = None,
             exhaustive: bool = True,
             limit: int = 20,
+            turning_radius: float = 14.0,
             illegal_indexes: List[int] | None = None) -> None:
         """
         Find n nearest neighbors and links them in the net graph.
@@ -417,7 +419,42 @@ class NetGraph:
                             continue
 
                         ids = new_path.indices()
-                        if len(ids) >= 3:
+                        if len(ids) >= 4:
+                            is_ring_hop = (
+                                self.track_graph.get_node(ids[-4]).ring_index != self.track_graph.get_node(ids[-3]).ring_index
+                                or self.track_graph.get_node(ids[-3]).ring_index != self.track_graph.get_node(ids[-2]).ring_index
+                                or self.track_graph.get_node(ids[-2]).ring_index != self.track_graph.get_node(ids[-1]).ring_index
+                            )
+                            if is_ring_hop:
+                                is_ring_hop = (
+                                    self.track_graph.get_node(ids[-3]).ring_index != self.track_graph.get_node(ids[-2]).ring_index
+                                    or self.track_graph.get_node(
+                                        ids[-2]).ring_index != self.track_graph.get_node(ids[-1]).ring_index
+                                )
+                                line1 = LineString(
+                                    [self.track_graph.get_node(ids[-4]).position, self.track_graph.get_node(ids[-3]).position]
+                                )
+                                line2 = LineString(
+                                    [self.track_graph.get_node(ids[-3]).position, self.track_graph.get_node(ids[-2]).position]
+                                )
+                                line3 = LineString(
+                                    [self.track_graph.get_node(ids[-2]).position, self.track_graph.get_node(ids[-1]).position]
+                                )
+                                theta1 = angle_between_lines(line1, line2)
+                                theta2 = angle_between_lines(line2, line3)
+                                min_dist_1 = 2 * turning_radius * sin(abs(theta1) / 2)
+                                min_dist_2 = 2 * turning_radius * sin(abs(theta2) / 2)
+                                dist_hop_line = self.track_graph.get_node(ids[-2]).position.distance(
+                                    self.track_graph.get_node(ids[-1]).position
+                                )
+                                if (abs(theta1) > pi / 2):
+                                    if self.track_graph.route_params.debug_prints:
+                                        print(f"skipped neighbor {to_index} for node {from_index} because of sharp angle or"
+                                              + " because of ring hop with insufficient distance to perform it")
+                                elif min_dist_1 + min_dist_2 > dist_hop_line / 2:
+                                    new_path.metrics.cost_offset += 1000  # soft remove lines, that might not be drivable
+                                    continue
+                        elif len(ids) >= 3:
                             is_ring_hop = (
                                 self.track_graph.get_node(ids[-3]).ring_index != self.track_graph.get_node(ids[-2]).ring_index
                                 or self.track_graph.get_node(ids[-2]).ring_index != self.track_graph.get_node(ids[-1]).ring_index

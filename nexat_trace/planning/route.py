@@ -185,19 +185,6 @@ class Route:
         """
         if self._route_params.debug_prints:
             print("Calculating path")
-        smooth_headlands = []
-        for headland in self._target_headlands:
-            smoothed = gt.erode_linearring(headland, self._route_params.vehicle_turning_radius)
-            if smoothed is not None and not smoothed.is_empty:
-                smooth_headlands.append(smoothed)
-            else:
-                smooth_headlands.append(headland)
-                if self._route_params.debug_prints:
-                    print("erode_linearring did not return valid value")
-                if PlanningMsg.CUTOUT_RING_SMOOTHING_ERROR not in self.planning_messages:
-                    self.planning_messages.append(PlanningMsg.CUTOUT_RING_SMOOTHING_ERROR)
-
-        self._target_headlands = smooth_headlands
 
         # setup cutout working flags
         distinct_ring_indexes = []
@@ -263,7 +250,7 @@ class Route:
                         -1,
                         self._target_headlands,
                         self._field_border,
-                        self._inner_border,
+                        self._full_inner_border,
                         self._route_params
                     )
                     check_curve_and_extend(curve)
@@ -275,7 +262,7 @@ class Route:
                         -1,
                         self._target_headlands,
                         self._field_border,
-                        self._inner_border,
+                        self._full_inner_border,
                         circled_cutouts=self._circled_cutouts
                     )
                     check_curve_and_extend(curve)
@@ -288,7 +275,7 @@ class Route:
                     -1,
                     self._target_headlands,
                     self._field_border,
-                    self._inner_border,
+                    self._full_inner_border,
                     self._route_params
                 )
                 check_curve_and_extend(curve)
@@ -298,7 +285,7 @@ class Route:
                     extension_segment = to_node.get_ab_line()
                     extension_length = min(
                         extension_segment.length,
-                        self._route_params.direction_change_extension_distance
+                        self._route_params.direction_change_extension_distance_steer
                     )
                     extension_point = extension_segment.interpolate(
                         extension_segment.length - extension_length
@@ -412,7 +399,7 @@ class Route:
         """
         multi_ab_lines = MultiLineString(self._ab_lines)
         working_area = multi_ab_lines.buffer(
-            7.05, cap_style=2, join_style=2, mitre_limit=0.01
+             self._route_params._track_width / 2 + 0.05, cap_style=2, join_style=2, mitre_limit=0.01
         )
         route_coverage = self._line.buffer(
             (self._route_params.working_width / 2) + 0.1,
