@@ -255,11 +255,6 @@ def erode_polygon_inwards(poly: Polygon, radius: float) -> Polygon:
         resolution=45
     )
     buffer = buffer.buffer(
-        -1.0 * radius,
-        join_style="round",
-        resolution=45
-    )
-    buffer = buffer.buffer(
         +1.0 * radius,
         join_style="round",
         resolution=45
