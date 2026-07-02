@@ -35,19 +35,19 @@ def get_target_headland_from_track_system(
     """
 
     target_headland = 1
+
+    headland_prep = _get_headland_prep(track_system, config)
     if config.override_headland_index is not None:
         target_headland = config.override_headland_index
     else:
-        if config.working_width >= 4 * config._track_width:
-            target_headland = 2
-
-        if config.working_width >= 5 * config._track_width:
-            target_headland = 3
+        for i in range(1, len(headland_prep)):
+            if round(sum(headland_prep[:i]), 1) >= config.working_width / 2:
+                target_headland = i - 1
+                break
 
     is_target = target_headland < len(track_system.headland_config)
 
     ring_index = min(len(track_system.headlands) - 1, target_headland)
-    headland_prep = _get_headland_prep(track_system, config)
 
     border_poly = track_system.outer_border
     rings = []
@@ -388,7 +388,7 @@ def simplify_ab_lines(
                     xl_to_headland = best_seg
 
         elif len(xl_intersections) == 1 and route_params.debug_prints:
-            print("Tangente in simplify ab lines.")
+            print("Tangente in simplify ab_lines.")
         elif xl_intersections == 0:
             simplify_pairs.add(i)
             if route_params.debug_prints:
@@ -597,9 +597,10 @@ def get_track_width(track_system: TrackSystem | List[LineString]) -> float | Non
 
     track_width = most_common
 
-    if abs(track_width - 14.0) < 0.001:
+    tolerance = 0.005
+    if abs(track_width - 14.0) < tolerance:
         track_width = 14.0
-    elif abs(track_width - 13.716) < 0.001:
+    elif abs(track_width - 13.716) < tolerance:
         track_width = 13.716
 
     return track_width
@@ -656,7 +657,8 @@ def _get_headland_prep(track_system: TrackSystem, route_params: RoutePlanningCon
         if i == 0:
             head_width /= 2
         headland_prep.append(head_width)
-    headland_prep.append(0.5 * route_params._track_width)
+    if sum(headland_prep) / route_params.working_width != 1:
+        headland_prep.append(0.5 * route_params._track_width)
     return headland_prep
 
 
@@ -761,7 +763,7 @@ def get_working_width_of_path_on_track_system(
         dists_path.append(nearest.distance(ab_line))
         dists_path.append(second_nearest.distance(ab_line))
 
-    return np.median(dists_path)
+    return round(np.median(dists_path), 1)
 
 
 def working_corridor_of_ab_line(

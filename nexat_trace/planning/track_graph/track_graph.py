@@ -1,8 +1,8 @@
-from math import pi
+from math import ceil, floor, pi
 from typing import List, Tuple
 
 from shapely import GeometryCollection, LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
-from shapely.ops import substring
+from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
 from nexat_trace.planning.path import Path
@@ -39,7 +39,7 @@ class TrackGraph:
             primary_nodes: List[PrimaryTrackGraphNode],
             secondary_nodes: List[SecondaryTrackGraphNode],
             target_headlands: List[LinearRing],
-            field_border: LinearRing,
+            field_border: LinearRing | Polygon,
             inner_border: MultiPolygon,
             progress_out: progress.PlanningProgress,
             exclude_areas: List[Polygon] | None = None):
@@ -57,7 +57,7 @@ class TrackGraph:
         self.route_params: RoutePlanningConfig = route_params
         self.target_headlands: List[LinearRing] = target_headlands
         self.primary_nodes: List[PrimaryTrackGraphNode] = primary_nodes
-        self.field_border: LinearRing = field_border
+        self.field_border: LinearRing | Polygon = field_border
         self.inner_border: MultiPolygon = inner_border
 
         self.exclude_areas: List[Polygon] = []
@@ -251,72 +251,23 @@ class TrackGraph:
         multi_ab = MultiLineString(self.ab_lines)
         working_area = multi_ab.buffer(
             (self.route_params._track_width / 2.0) + 0.01, cap_style=2, join_style=2, mitre_limit=0.01
-        )
+        ).intersection(self.inner_border)
         nodes: List[PrimaryTrackGraphNode] = []
+        selected_lines = None
         if start is not None and not self.field_border.contains(start):
             start = None
 
         if start is None:
-            # build up grid of linestrings that mark the lines that need to be skipped
-            subsets = []
-            for i in range(skip_ab_lines):
-                offset = self.route_params._track_width * i
-                subsets.append(self._get_mask_with_offset(skip_ab_lines, offset))
-
-            optimal_index = 0
-            max_coverage = 0.0
-            subset_lines = []
-            for i, nodes in enumerate(subsets):
-                lines = [node.get_ab_line() for node in nodes]
-                subset_lines.append(lines)
-                multi_line = MultiLineString(lines)
-                subset_coverage = multi_line.buffer(
-                    (working_width / 2) + 0.05, cap_style=2, join_style=2, mitre_limit=0.01
-                )
-                # uncovered_area = working_area.difference(subset_coverage)
-                intersection = subset_coverage.intersection(working_area)
-                if intersection.area > max_coverage:
-                    optimal_index = i
-                    max_coverage = intersection.area
-
-            mask = MultiLineString(subset_lines[optimal_index])
+            mask = self.find_best_subset(skip_ab_lines, working_width, working_area)
+            selected_lines = [ab for ab in list(mask.geoms)]
 
         else:
             mask = self._get_mask_with_offset(skip_ab_lines, 0.0, start)
             lines = [node.get_ab_line() for node in mask]
             mask = MultiLineString(lines)
+            selected_lines = self.add_irregular_abs_for_coverage(mask, working_width, working_area)
 
-        #  check if we need irregular ab lines to cover the whole area
-        selected_lines = mask
-        subset_coverage = selected_lines.buffer(
-            working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
-        )
-        uncovered = working_area.difference(subset_coverage)
-        first_line = selected_lines.geoms[0]
-        extended_first = gt.extend_line(first_line, 1000000.0)
-
-        for geom in uncovered.geoms:
-            # this is a dodgy check
-            if isinstance(geom, Polygon) and geom.area > 0.1:
-                centroid = geom.centroid
-                distance = extended_first.distance(centroid)
-
-                # determine sign: which side of the line is the centroid on?
-                x1, y1 = extended_first.coords[0]
-                x2, y2 = extended_first.coords[-1]
-                cross = (x2 - x1) * (centroid.y - y1) - (y2 - y1) * (centroid.x - x1)
-                if cross < 0:
-                    distance = -distance
-
-                parallel = extended_first.parallel_offset(distance)
-                parallel = parallel.intersection(self.field_border)
-                if isinstance(parallel, MultiLineString):
-                    parallel = LineString([parallel.geoms[0].coords[0], parallel.geoms[0].coords[-1]])
-                elif isinstance(parallel, GeometryCollection):
-                    lines = [geom for geom in parallel.geoms if isinstance(geom, LineString)]
-                    parallel = LineString([lines[0].coords[0], lines[-1].coords[-1]])
-                selected_lines = selected_lines.union(parallel)
-        nodes_indexes = self.primary_node_tree.query(mask, "dwithin", 1.0)
+        nodes_indexes = self.primary_node_tree.query(MultiLineString(selected_lines), "dwithin", 1.0)
         nodes = [self.primary_nodes[i] for i in nodes_indexes]
         nodes.sort(key=lambda node: node.index)
 
@@ -330,18 +281,68 @@ class TrackGraph:
         """
         Returns a subset of primary nodes depending on the first path, the working_width and optional start.
         """
-        # TODO implement supoort for multiple paths
-
-        path_working_width = get_working_width_of_path_on_track_system(driven_paths[0], self.track_system)
-
-        if working_width != round(path_working_width, 1):
-            return self._get_working_width_subset(working_width, start)
+        # TODO implement support for multiple paths
+        old_ww = get_working_width_of_path_on_track_system(driven_paths[0], self.track_system)
 
         all_nodes = self.get_route_nodes_from_path(driven_paths[0])
 
         nodes = [node for node in all_nodes if isinstance(node, PrimaryTrackGraphNode)]
 
+        # hier brauche ich trim and add
+        multi_ab = MultiLineString(self.ab_lines)
+        working_area = multi_ab.buffer(
+            (self.route_params._track_width / 2.0) + 0.01, cap_style=2, join_style=2, mitre_limit=0.01
+        ).intersection(self.inner_border)
+        mask = MultiLineString([no.ab_line for no in nodes])
+        selected_lines = [ab for ab in mask.geoms]
+        if old_ww != working_width:
+            start_point = Point(driven_paths[0].geoms[0].coords[0])
+            selected_lines = self.trim_abs(selected_lines, working_width, working_area, start_point)
+        selected_lines = self.add_irregular_abs_for_coverage(MultiLineString(selected_lines), working_width, working_area)
+        nodes_indexes = self.primary_node_tree.query(MultiLineString(selected_lines), "dwithin", 1.0)
+        nodes = [self.primary_nodes[i] for i in nodes_indexes]
+        nodes.sort(key=lambda node: node.index)
         return nodes
+
+    def find_best_subset(self, skip_ab_lines: float, working_width: float, working_area: Polygon | MultiPolygon):
+        """Tests all possible subsets for the given working_width and find the best subset.
+
+        Uses _get_mask_with_offset to calculate all possible subsets. Best subset is the one with the most coverage while having
+        the least potential abs.
+        """
+        # build up grid of linestrings that mark the lines that need to be skipped
+        subsets = []
+        for i in range(skip_ab_lines):
+            offset = self.route_params._track_width * i
+            subsets.append(self._get_mask_with_offset(skip_ab_lines, offset))
+
+        optimal_index = 0
+        max_coverage = 0.0
+        least_potential_abs = float('inf')
+        ab_line_length = -1
+        subset_lines = []
+        for i, nodes in enumerate(subsets):
+            lines = [node.get_ab_line() for node in nodes]
+            subset_lines.append(lines)
+            multi_line = MultiLineString(lines)
+            subset_coverage = multi_line.buffer(
+                (working_width / 2) + 0.05, cap_style=2, join_style=2, mitre_limit=0.01
+            )
+            intersection = subset_coverage.intersection(working_area)
+            # maybe we need a check here to filter uncovered_polys that would be resolved by the same ab
+            subset_lines[i] = self.add_irregular_abs_for_coverage(MultiLineString(subset_lines[i]), working_width, working_area)
+            if intersection.area >= max_coverage and len(subset_lines[i]) <= least_potential_abs:
+                same_length = len(subset_lines[i]) == least_potential_abs
+                same_coverage = round(intersection.area, 4) == round(max_coverage, 4)
+                abs_are_shorter = sum(li.length for li in subset_lines[i]) < ab_line_length
+                if same_length and same_coverage and abs_are_shorter:
+                    continue
+                optimal_index = i
+                max_coverage = intersection.area
+                least_potential_abs = len(subset_lines[i])
+                ab_line_length = sum(li.length for li in subset_lines[i])
+
+        return MultiLineString(subset_lines[optimal_index])
 
     def _get_mask_with_offset(
             self,
@@ -501,6 +502,328 @@ class TrackGraph:
         ]
 
         return subset
+
+    def add_irregular_abs_for_coverage(self, mask: MultiLineString | List[LineString],
+                                       working_width: float,
+                                       working_area: Polygon | MultiPolygon) -> List[LineString]:
+        """Add AB lines to ensure complete field coverage.
+
+        Iteratively identifies and fills uncovered areas within the working area by generating
+        additional parallel AB lines. Starting from the first line in the mask, calculates offset
+        parallel lines positioned to cover gaps identified after buffering the initial set.
+
+        The algorithm:
+        1. Buffers the input mask to compute initial coverage
+        2. Identifies uncovered regions via difference operation
+        3. For each uncovered region above the area tolerance:
+        - Computes perpendicular offset from the extended first line
+        - Generates parallel lines at appropriate spacing intervals
+        - Intersects with field boundary to clip to valid geometry
+        - Validates line length and handles edge cases (MultiLineString, GeometryCollection)
+        4. Repeats until no significant uncovered areas remain or iteration limit reached
+
+        Parameters
+        ----------
+        mask : MultiLineString | List[LineString]
+            Initial set of AB lines to start coverage from. If a list, will be converted
+            to MultiLineString for buffer operations.
+        working_width : float
+            The effective working width used to calculate coverage buffer distance
+            (buffer = working_width / 2).
+        working_area : Polygon | MultiPolygon
+            The target area that must be covered. Only uncovered regions within this
+            area are considered for infill lines.
+
+        Returns
+        -------
+        List[LineString]
+            Complete set of AB lines (original + newly generated) ensuring coverage
+            of the working area within tolerance thresholds.
+
+        Notes
+        -----
+        - Tolerance for small uncovered regions: 0.01 area units
+        - Maximum iterations: 1000 to prevent infinite loops
+        - Lines shorter than route_params.min_ab_line_length are filtered out
+        - Minimum polygon area to trigger infill: 0.1 units
+        """
+        selected_lines = [line for line in mask.geoms]
+        subset_coverage = mask.buffer(
+            working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
+        )
+        uncovered = working_area.difference(subset_coverage)
+        if isinstance(uncovered, Polygon):
+            uncovered = MultiPolygon([uncovered])
+        first_line = selected_lines[0]
+        extend_distance = (self.field_border.length if isinstance(self.field_border, LinearRing)
+                           else self.field_border.exterior.length)
+        extended_first = gt.extend_line(first_line, extend_distance)
+        cnt = 0
+        last_uncovered_list = [Polygon()]
+        while True:
+            cnt += 1
+            uncovered_geom_list = self.filter_uncovered_poly(uncovered, 0.01, 0.05)
+            if (uncovered_geom_list is None or len(uncovered_geom_list) == 0
+                    or cnt > 2 * len(self.ab_lines)
+                    or last_uncovered_list == uncovered_geom_list):
+                break
+            for geom in uncovered_geom_list:
+                # this is a dodgy check
+                current_selected_multi = MultiLineString(selected_lines)
+                if isinstance(geom, Polygon) and geom.area > 0.1:
+                    centroid = geom.centroid
+                    distance = extended_first.distance(centroid)
+
+                    sign = gt.direction_sgn_point_from_line(extended_first, centroid)
+                    distance = sign * distance
+
+                    multiple_ww = distance / working_width
+                    lower_multiple = floor(multiple_ww)
+                    upper_multiple = ceil(multiple_ww)
+                    parallel_lower_line = extended_first.offset_curve(lower_multiple * working_width)
+                    parallel_upper_line = extended_first.offset_curve(upper_multiple * working_width)
+
+                    if round(geom.distance(current_selected_multi), 2) < round(working_width / 2, 2) - 1e-4:
+                        geom = geom.difference(
+                            parallel_lower_line.buffer(working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01)
+                            )
+
+                        geom = geom.difference(
+                            parallel_upper_line.buffer(working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01)
+                            )
+                        if isinstance(geom, MultiPolygon):
+                            geoms = geom
+                        elif isinstance(geom, Polygon):
+                            geoms = MultiPolygon([geom])
+                        elif hasattr(geom, "__iter__") and all(isinstance(g, MultiPolygon) for g in geom):
+                            geoms = unary_union(geom)
+                        geoms = self.filter_uncovered_poly(geoms, 0.01, 0.05)
+                        if len(geoms) == 0:
+                            continue
+                        centroid = geom.centroid
+                        distance = extended_first.distance(centroid) * sign
+
+                        multiple_tw = round(distance / self.route_params._track_width)
+                        parallel = extended_first.offset_curve(self.route_params._track_width * multiple_tw)
+                    else:
+                        parallel = (
+                            parallel_lower_line
+                            if parallel_lower_line.distance(geom) < parallel_upper_line.distance(geom)
+                            else parallel_upper_line
+                        )
+                        if (not parallel.intersects(self.inner_border)
+                                or min(parallel.distance(self.ab_lines)) > self.route_params._track_width / 2):
+                            # Both candidates outside working area - try intermediate offset
+                            mid_multiple = (lower_multiple + upper_multiple) / 2
+                            mid_distance_snapped = sign * round(
+                                abs((mid_multiple * working_width) / self.route_params._track_width) + 1e-5
+                                ) * self.route_params._track_width  # to circumvent bankers rounding we added a small number
+                            parallel = extended_first.offset_curve(mid_distance_snapped)
+                            if not parallel.intersects(self.inner_border):
+                                # Still outside - skip this uncovered region
+                                continue
+                    distance_to_nearest_ab = parallel.distance(mask)
+                    parallel = parallel.intersection(self.field_border, grid_size=0)
+                    if isinstance(parallel, MultiLineString):
+                        parallel = gt.recombine_ml_in_bounds(parallel, centroid, self.field_border)
+                    elif isinstance(parallel, GeometryCollection):
+                        parallel_lines = [
+                            geom for geom in parallel.geoms if isinstance(geom, LineString)
+                            and geom.length > self.route_params.min_ab_line_length
+                            ]
+                        parallel_lines.sort(key = lambda li: li.distance(geom))
+                        parallel = parallel_lines[0]
+                    elif isinstance(parallel, MultiPoint):
+                        continue
+                    if not isinstance(parallel, LineString) or parallel.is_empty:
+                        continue
+                    if (working_width >= 2 * self.route_params._track_width
+                            and distance_to_nearest_ab < 1.5 + self.route_params._track_width):
+                        left_offset = parallel.offset_curve(self.route_params._track_width)
+                        right_offset = parallel.offset_curve(-1 * self.route_params._track_width)
+                        parallel = (left_offset if left_offset.distance(mask) > 1.5 * self.route_params._track_width
+                                    else right_offset)
+                        if isinstance(parallel, MultiLineString):
+                            parallel = gt.recombine_ml_in_bounds(parallel, centroid, self.field_border)
+                    selected_lines.append(parallel)
+
+                last_uncovered_list = uncovered_geom_list
+                subset_coverage = MultiLineString(selected_lines).buffer(
+                    working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
+                )
+                uncovered = uncovered = working_area.difference(subset_coverage)
+
+        return selected_lines
+
+    def trim_abs(self, to_be_driven_abs: List[LineString],
+                 working_width: float,
+                 target_working_area: Polygon,
+                 start_point: Point) -> List[LineString]:
+        """Remove redundant AB lines that don't contribute to full field coverage.
+
+        Filters AB lines by determining the coverage area they provide when buffered by the
+        working width (using flat end caps). Retains only lines needed to cover the target
+        working area, allowing tolerance for small uncovered gaps.
+
+        Maintains the AB line skipping ratio: skip_ab_lines = round(working_width // track_width)
+        to preserve spacing logic between line sets. The ab_line closest to start_point is
+        used as an anchor and always retained.
+
+        Parameters
+        ----------
+        to_be_driven_abs : List[LineString]
+            The AB lines to be trimmed.
+        working_width : float
+            The effective working width for coverage calculations.
+        target_working_area : Polygon
+            The area that must be covered by the selected AB lines.
+        start_point : Point
+            The starting point for path execution. The closest ab_line to this point
+            will be retained as an anchor for the skip pattern.
+
+        Returns
+        -------
+        List[LineString]
+            Trimmed list of AB lines maintaining coverage tolerance.
+
+        Tolerance : Uncovered areas smaller than 0.01 units are ignored.
+        """
+        tolerance_area = 0.1
+        tolerance_width = 0.05
+        first_ab = to_be_driven_abs[0]
+        trimmed = to_be_driven_abs.copy()
+        extension_length = self.field_border.exterior.length
+        # sort first to find an ab line at the end of the field, then sort all ab lines based on the distance
+        # to that ab line, so the neighbours in the list are the spatial neighbours in orthogonal direction
+        trimmed = [gt.extend_line(ab, extension_length) for ab in trimmed]
+        trimmed.sort(key = lambda ab: ab.distance(first_ab))
+        first_ab = trimmed[-1]
+        trimmed.sort(key = lambda ab: ab.distance(first_ab))
+
+        # Helper to calculate uncovered area
+        def get_uncovered_poly(lines: List[LineString]) -> float:
+            multi = MultiLineString(lines)
+            coverage = multi.buffer(
+                working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
+            )
+            uncovered = target_working_area.difference(coverage)
+            return uncovered
+
+        # Find the closest ab_line to start_point - this will be kept and used as anchor
+        closest_ab_idx = 0
+        min_distance = float('inf')
+        for i, ab in enumerate(trimmed):
+            dist = ab.distance(start_point)
+            if dist < min_distance:
+                min_distance = dist
+                closest_ab_idx = i
+
+        # Aggressively trim: remove lines if they would be covered by the next regular ab in the skip pattern
+        current_idx = 0
+        base_uncovered_polys = get_uncovered_poly(to_be_driven_abs)
+        base_uncovered_polys = self.filter_uncovered_poly(base_uncovered_polys, tolerance_area, tolerance_width)
+
+        target_head_poly = Polygon(self.target_headlands[0], self.target_headlands[1:])
+        anchor_line = trimmed[closest_ab_idx]
+        anchor_line = gt.extend_line(anchor_line, self.field_border.exterior.length)
+        while len(trimmed) > 1 and current_idx < len(trimmed) - 1:
+            # Never remove the closest line to start_point
+            if current_idx == closest_ab_idx:
+                current_idx += 1
+                continue
+
+            test_uncovered = None
+            # If distance to next line is less than ideal skip distance, try removing current line
+
+            test_trimmed = trimmed[:current_idx] + trimmed[current_idx + 1:]
+            test_uncovered_poly = get_uncovered_poly(test_trimmed)
+
+            # Aggressive removal: check if removal maintains coverage or if the line
+            # would be covered by the next regular ab addition (respecting skip_lines)
+            test_uncovered = self.filter_uncovered_poly(
+                test_uncovered_poly, tolerance_area, tolerance_width)
+
+            # Remove if coverage is maintained
+            if MultiPolygon(test_uncovered).area - MultiPolygon(base_uncovered_polys).area <= 0:
+                trimmed = test_trimmed
+                # Adjust closest_ab_idx if we removed a line before it
+                if current_idx < closest_ab_idx:
+                    closest_ab_idx -= 1
+                continue
+
+            # Also remove if the current line is covered by would-be neighbors (skip pattern neighbors)
+            # Calculate which theoretical neighbors should exist based on skip pattern
+
+            dist_to_anchor = anchor_line.distance(trimmed[current_idx])
+
+            # Determine the theoretical index based on skip pattern spacing
+            i = dist_to_anchor // working_width
+            sign: int = gt.direction_sgn_point_from_line(anchor_line, trimmed[current_idx].centroid)
+
+            # Find would-be neighbors at i*track_width and (i+1)*track_width distances
+            would_be_neighbors = []
+
+            would_be_neighbors.append(anchor_line.offset_curve(sign * i * working_width))
+            would_be_neighbors.append(anchor_line.offset_curve(sign * (i + 1) * working_width))
+            if any(isinstance(geom, MultiLineString) for geom in would_be_neighbors):
+                for i, geom in enumerate(would_be_neighbors):
+                    if isinstance(geom, MultiLineString):
+                        would_be_neighbors[i] = LineString([geom.geoms[0].boundary.geoms[0], geom.geoms[-1].boundary.geoms[-1]])
+            would_be_neighbors = MultiLineString(would_be_neighbors)
+            would_be_neighbors = would_be_neighbors
+            if len(would_be_neighbors.geoms) >= 1:
+                neighbor_coverage = would_be_neighbors.buffer(
+                    working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
+                ).intersection(target_head_poly)
+                current_line_buffered = trimmed[current_idx].buffer(
+                    working_width / 2, cap_style=2, join_style=2, mitre_limit=0.01
+                ).intersection(self.inner_border)
+
+                # If current line is fully covered by would-be neighbors, remove it
+                if current_line_buffered.difference(neighbor_coverage).area < 0.1:
+                    trimmed = test_trimmed
+                    if current_idx < closest_ab_idx:
+                        closest_ab_idx -= 1
+                    continue
+                else:
+                    print("Here not")
+            else:
+                print("No neighbors")
+
+            current_idx += 1
+
+        return trimmed
+
+    @staticmethod
+    def filter_uncovered_poly(uncovered_mpoly: MultiPolygon,
+                              tolerance_area: float = 0.01,
+                              tolerance_width: float = 0.05) -> List[Polygon]:
+        """Filter uncovered polygons by area and minimum width constraints.
+
+        Removes polygons that are too small to warrant coverage or are too narrow to be
+        relevant for field operations. Filters out regions that represent only minor coverage
+        gaps or thin slivers by checking against both area and minimum edge length thresholds.
+        """
+        uncovered_relevant_polys = []
+        if uncovered_mpoly.area > tolerance_area:
+            if isinstance(uncovered_mpoly, MultiPolygon):
+                for poly in uncovered_mpoly.geoms:
+                    if poly.area < tolerance_area:  # we ignore 10cm by 10cm here
+                        continue
+                    mm_rect = poly.minimum_rotated_rectangle.exterior
+                    coords = list(mm_rect.coords[:-1])  # Remove duplicate closing point
+                    edge_lengths = [
+                        LineString(li).length
+                        for li in zip(coords, coords[1:] + [coords[0]], strict=True)
+                        ]
+                    edge_lengths.sort()
+                    # we ignore long uncovered areas, if its 5cm * ab_length
+                    if edge_lengths[0] < tolerance_width:
+                        continue
+                    uncovered_relevant_polys.append(poly)
+            elif isinstance(uncovered_mpoly, Polygon) and uncovered_mpoly.area > tolerance_area:
+                uncovered_relevant_polys = [uncovered_mpoly]
+        return uncovered_relevant_polys
 
     def plot(self, full=True, texts=True):
         """
