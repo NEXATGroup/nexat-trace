@@ -527,14 +527,17 @@ def dubins_between_segments(
         current_line_extended = extend_line_in_bounds(current_line_extended, bounds, extend_back = False)
 
     target_line_extended = target_line
-    while current_line.intersects(target_line_extended):
+    cnt = 0
+    while current_line.intersects(target_line_extended) and cnt < 20:
         target_line_extended = substring(target_line_extended, 0.05, target_line_extended.length)
+        cnt += 1
 
     if target_line.coords[0] != target_line.coords[-1]:
         target_front_extended = extend_line_in_bounds(target_line_extended, bounds, extend_front=True, extend_back=False)
-
-        while current_line.intersects(target_front_extended):
+        cnt = 0
+        while current_line.intersects(target_front_extended) and cnt < 20:
             target_front_extended = substring(target_front_extended, 0, target_front_extended.length * 0.95)
+            cnt += 1
 
         target_line_extended = target_front_extended
         target_line_extended = extend_line_in_bounds(target_line_extended, bounds, extend_front=False, extend_back=True)
@@ -799,3 +802,106 @@ def union_intersecting_geoms(geometries: List[BaseGeometry]) -> List[Polygon]:
         return union_intersecting_geoms(grouped_geoms)
 
     return grouped_geoms
+
+
+def check_segmentation(path: List[Point] | LineString | List[LineString],
+                       turning_headland: LinearRing | LineString,
+                       function_string: str,
+                       geom_from: BaseGeometry | None = None,
+                       geom_to: BaseGeometry | None = None) -> bool:
+    """Checks if the given path is segmeted correclty."""
+    segments = []
+    if isinstance(path, list) and (isinstance(path[0], Tuple) or path[0].geom_type == "Point"):
+        path = LineString(path)
+        segments, _ = segment_line(path, radius_threshold=1.35)
+    elif isinstance(path, list) and path[0].geom_type == "LineString":
+        segments = path
+    elif isinstance(path, LineString):
+        segments, _ = segment_line(path, radius_threshold=1.35)
+    for i in range(len(segments) - 1):
+        is_same_start_stop = segments[i].boundary.geoms[-1].distance(segments[i + 1].boundary.geoms[0]) < 1e-9
+        is_direction_change = abs(
+            angle_between_lines(LineString(segments[i].coords[-2:]), LineString(segments[i + 1].coords[:2]))
+            ) > 0.95 * pi
+        if not is_same_start_stop or not is_direction_change:
+            path_start_dist = path.project(segments[i].boundary.geoms[-1])
+            path_end_dist = path.project(segments[i + 1].boundary.geoms[0])
+            path_between = substring(path, path_start_dist, path_end_dist)
+            path_between = path_between  # to fix ruff errors
+            print("Segmented path is not segmented correctly")
+            return False
+    return True
+
+
+def recombine_ml_in_bounds(ml: MultiLineString,
+                           origin: Point,
+                           bound: LinearRing | Polygon) -> LineString:
+    """Recombines a MultiLineString into a LineString that does not cross the bounds.
+
+    The closest segment to the origin is guaranteed to be included in the resulting LineString.
+    Assumes that the MultiLineString is in order.
+    """
+    if ml is None or ml.is_empty:
+        return LineString()
+
+    geoms = list(ml.geoms)
+    if not geoms:
+        return LineString()
+
+    if len(geoms) == 1:
+        return geoms[0]
+
+    def _can_connect_without_crossing(connection_line: LineString, bound_poly: Polygon) -> bool:
+        """Check if a connection line can be made without crossing the polygon boundary."""
+        return not bound_poly.exterior.intersects(connection_line)
+
+    bound_poly = bound if isinstance(bound, Polygon) else Polygon(bound)
+    closest_idx = min(range(len(geoms)), key=lambda i: geoms[i].distance(origin))
+
+    # Start building result with the closest segment
+    result_coords = list(geoms[closest_idx].coords)
+
+    # Try to extend forward from the closest segment
+    current_idx = closest_idx
+    while current_idx < len(geoms) - 1:
+        next_idx = current_idx + 1
+
+        next_segment = geoms[next_idx]
+        end_point = Point(result_coords[-1])
+        start_point = Point(next_segment.coords[0])
+
+        connection = LineString([end_point, start_point])
+        if _can_connect_without_crossing(connection, bound_poly):
+            result_coords.extend(next_segment.coords[1:])
+            current_idx = next_idx
+        else:
+            break
+
+    # Try to extend backward from the closest segment
+    current_idx = closest_idx - 1
+    while current_idx > 0:
+
+        prev_segment = geoms[current_idx]
+        end_point = Point(prev_segment.coords[-1])
+        start_point = Point(result_coords[0])
+
+        # Check if connecting would cross the boundary
+        connection = LineString([end_point, start_point])
+        if _can_connect_without_crossing(connection, bound_poly):
+            result_coords = list(prev_segment.coords[:-1]) + result_coords
+            current_idx -= 1
+        else:
+            break
+
+    return LineString(result_coords) if len(result_coords) >= 2 else LineString()
+
+
+def direction_sgn_point_from_line(ref_line: LineString, target_point: Point) -> int:
+    """Determines the sign of the direction, the point lies away from the reference line."""
+    x1, y1 = ref_line.coords[0]
+    x2, y2 = ref_line.coords[-1]
+    cross = (x2 - x1) * (target_point.y - y1) - (y2 - y1) * (target_point.x - x1)
+    sign = 1
+    if cross < 0:
+        sign = -1
+    return sign

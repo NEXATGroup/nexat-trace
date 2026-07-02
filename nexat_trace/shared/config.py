@@ -248,7 +248,7 @@ class RoutePlanningConfig:
         # ----------- POSTPROCESSING PARAMETERS ------------ #
         #
 
-        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE, PostSteps.EXTEND_START_END]
+        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE]
 
         self.post_processing_steps = {}
         for step in PostSteps:
