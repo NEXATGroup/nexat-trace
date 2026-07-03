@@ -368,15 +368,15 @@ def evade_rois(route: Route):
             # route._route_params.corridor_strategy = CorridorStrategy.DRIVE_ALL.value
             if path_around_obs is not None and route._route_params.corridor_strategy != CorridorStrategy.DRIVE_NONE.value:
                 inner_border = route._full_inner_border
-                start_point_ab_candidate, dist = min(
+                start_point_ab_candidate = min(
                     ((ab, ab.distance(all_intersections[0].start))for ab in route._track_system.ab_lines.geoms),
                     key=lambda t: t[1]
                     )
-                end_point_ab_candidate, dist = min(
+                end_point_ab_candidate = min(
                     ((ab, ab.distance(all_intersections[0].end))for ab in route._track_system.ab_lines.geoms),
                     key=lambda t: t[1]
                     )
-                ab_line = min(start_point_ab_candidate, end_point_ab_candidate, key=lambda ab: ab[1])[0]
+                ab_line = min([start_point_ab_candidate, end_point_ab_candidate], key=lambda ab: ab[1])[0]
                 outer_turning_head = route._target_headlands[0]
                 path_with_hooks = insert_hooks_around_obs(
                     path_around_obs,
