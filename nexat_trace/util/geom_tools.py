@@ -538,14 +538,17 @@ def dubins_between_segments(
         current_line_extended = extend_line_in_bounds(current_line_extended, bounds, extend_back = False)
 
     target_line_extended = target_line
-    while current_line.intersects(target_line_extended):
+    cnt = 0
+    while current_line.intersects(target_line_extended) and cnt < 20:
         target_line_extended = substring(target_line_extended, 0.05, target_line_extended.length)
+        cnt += 1
 
     if target_line.coords[0] != target_line.coords[-1]:
         target_front_extended = extend_line_in_bounds(target_line_extended, bounds, extend_front=True, extend_back=False)
-
-        while current_line.intersects(target_front_extended):
+        cnt = 0
+        while current_line.intersects(target_front_extended) and cnt < 20:
             target_front_extended = substring(target_front_extended, 0, target_front_extended.length * 0.95)
+            cnt += 1
 
         target_line_extended = target_front_extended
         target_line_extended = extend_line_in_bounds(target_line_extended, bounds, extend_front=False, extend_back=True)
