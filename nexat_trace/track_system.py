@@ -71,6 +71,7 @@ HEADLAND_INDEX_PROPERTY = "headland_index"
 HEADLAND_CONFIG_PROPERTY = "headland_config"
 AB_LINES_PROPERTY = "ab_lines"
 OBSTACLE_AVOIDANCE_PROPERTY = "obstacle_avoidance_segments"
+TO_BE_EVADED_PROPERTY = "to_be_evaded_obstacles"
 
 
 class TrackSystem:
@@ -98,6 +99,9 @@ class TrackSystem:
     obstacle_avoidance_segments: List[LineString | LinearRing]
         List of LineStrings and/or LinearRings representing tracks that are supposed to be driven by the vehicle inside the field
         to avoid obstacles without dedicated headland tracks. These segments have to be rounded to the desired turning radius.
+    to_be_evaded_obstacles: List[LineString | LinearRing]
+        List of Polygons representing obstacles, that should be avoided using and evasion move, which is
+        basically a hook onto a segment to avoid the obstacle with enough clearance.
 
     Examples
     --------
@@ -136,7 +140,8 @@ class TrackSystem:
             headlands: List[List[LinearRing]],
             ab_lines: MultiLineString,
             headland_config: List[float],
-            obstacle_avoidance_segments: List[LineString | LinearRing] | None = None):
+            obstacle_avoidance_segments: List[LineString | LinearRing] | None = None,
+            to_be_evaded_obstacles:  List[LineString | LinearRing] | None = None):
 
         self.outer_border: Polygon = outer_border
         self.headlands: List[List[LinearRing]] = headlands
@@ -147,12 +152,17 @@ class TrackSystem:
             obstacle_avoidance_segments = []
         self.obstacle_avoidance_segments: List[LineString | LinearRing] = obstacle_avoidance_segments
 
+        if to_be_evaded_obstacles is None:
+            to_be_evaded_obstacles = []
+        self.to_be_evaded_obstacles: List[LineString | LinearRing] = to_be_evaded_obstacles
+
         all_headlands = []
         for ring_list in headlands:
             all_headlands.extend(ring_list)
 
         multi_headland = MultiLineString(all_headlands)
         multi_obstacle_segments = MultiLineString(obstacle_avoidance_segments)
+        multi_evasion_segments = MultiLineString(to_be_evaded_obstacles)
 
         str_to_hash = (
             outer_border.wkt
@@ -160,6 +170,7 @@ class TrackSystem:
             + ab_lines.wkt
             + str(headland_config)
             + multi_obstacle_segments.wkt
+            + multi_evasion_segments.wkt
         )
         self._hash_id = hashlib.sha256(str_to_hash.encode('utf-8')).hexdigest()
 
@@ -179,6 +190,10 @@ class TrackSystem:
             Feature(
                 MultiLineString(self.obstacle_avoidance_segments),
                 {GEOM_TYPE_KEY: OBSTACLE_AVOIDANCE_PROPERTY}
+            ),
+            Feature(
+                MultiLineString(self.to_be_evaded_obstacles),
+                {GEOM_TYPE_KEY: TO_BE_EVADED_PROPERTY}
             )
         ]
 
@@ -202,6 +217,7 @@ class TrackSystem:
             reference_ab_line: LineString,
             headland_config: List[float],
             obstacle_avoidance_segments: List[LineString | LinearRing] | None = None,
+            to_be_evaded_obstacles: List[LineString | LinearRing] | None = None,
             offset_from_border: float = 0.4):
         """
         Generates a track system from a border, field and vehicle parameters.
@@ -221,6 +237,10 @@ class TrackSystem:
             track width.
         obstacle_avoidance_segments : List[LineString | LinearRing]
             List of LineStrings and/or LinearRings representing tracks that are supposed to be driven by the vehicle inside the
+            field to avoid obstacles without dedicated headland tracks. These segments have to be rounded to the desired turning
+            radius.
+        to_be_evaded_obstacles : List[LineString | LinearRing]
+            List of Polygons representing tracks that are supposed to be driven by the vehicle inside the
             field to avoid obstacles without dedicated headland tracks. These segments have to be rounded to the desired turning
             radius.
 
@@ -268,7 +288,9 @@ class TrackSystem:
         multi_grid = MultiLineString(line_grid)
         multi_grid = multi_grid.intersection(inner_headland)
 
-        track_system = TrackSystem(outer_border, headlands, multi_grid, headland_config, obstacle_avoidance_segments)
+        track_system = TrackSystem(
+            outer_border, headlands, multi_grid, headland_config, obstacle_avoidance_segments, to_be_evaded_obstacles
+            )
 
         return track_system
 
@@ -306,6 +328,7 @@ class TrackSystem:
         headland_config_entries = {}
         headland_config: list | None = None
         obstacle_avoidance_segments: list | None = None
+        to_be_evaded_obstacles: list | None = None
 
         for feature_data in data["features"]:
             feature = Feature.from_dict(feature_data)
@@ -328,6 +351,9 @@ class TrackSystem:
             elif track_system_geom_type == OBSTACLE_AVOIDANCE_PROPERTY:
                 multi_geom = shape(feature.geometry)
                 obstacle_avoidance_segments = [geom for geom in multi_geom.geoms]
+            elif track_system_geom_type == TO_BE_EVADED_PROPERTY:
+                multi_geom = shape(feature.geometry)
+                to_be_evaded_obstacles = [geom for geom in multi_geom.geoms]
 
         headland_config = []
         for i in range(len(headland_config_entries)):
@@ -338,5 +364,6 @@ class TrackSystem:
             headlands,
             ab_lines,
             headland_config,
-            obstacle_avoidance_segments
+            obstacle_avoidance_segments,
+            to_be_evaded_obstacles
         )

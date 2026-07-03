@@ -161,7 +161,11 @@ class PrimaryTrackGraphNode(TrackGraphNode):
         """
         # get working corridor geometry
         corridor_line = get_corridor_line(
-            ab_line, route_params.working_width, headland_ring, inner_border, route_params.implement_working_offset
+            ab_line,
+            route_params,
+            headland_ring,
+            inner_border,
+            implement_working_offset= route_params.implement_working_offset
         )
 
         # find turn curve radius middle point

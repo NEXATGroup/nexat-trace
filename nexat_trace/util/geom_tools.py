@@ -5,7 +5,17 @@ from typing import Iterable, Iterator, List, Tuple, TypeVar
 import dubins
 import numpy as np
 from numpy import typing as npt
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, remove_repeated_points
+from shapely import (
+    LinearRing,
+    LineString,
+    MultiLineString,
+    MultiPoint,
+    MultiPolygon,
+    Point,
+    Polygon,
+    remove_repeated_points,
+    simplify,
+)
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, substring, unary_union
 
@@ -508,7 +518,8 @@ def dubins_between_segments(
         bounds: LinearRing = None,
         headland_ring: LinearRing = None,
         ab_is_current_line: bool = False,
-        extend_start_line: bool = True) -> LineString | None:
+        extend_start_line: bool = True,
+        exhaustive: bool = False) -> LineString | None:
     """
     Return a dubins curve between two line segments.
     """
@@ -542,11 +553,18 @@ def dubins_between_segments(
     intersection_point_line = current_line_extended.intersection(target_line_extended)
     current_point_projection = current_line_extended.project(current_point)
     nearest_intersection_point_to_point = None
+    intersection_point_line_list = []
     if isinstance(intersection_point_line, Point):
         nearest_intersection_point_to_point = intersection_point_line
+        # here we only need this for the while loop
+        intersection_point_line_list.append(
+            (
+                current_line_extended.project(nearest_intersection_point_to_point) - current_point_projection,
+                nearest_intersection_point_to_point,
+            )
+        )
 
     elif isinstance(intersection_point_line, MultiPoint):
-        intersection_point_line_list = []
         for point in intersection_point_line.geoms:
             if current_line_extended.project(point) - current_point_projection > 0:
                 intersection_point_line_list.append(
@@ -577,28 +595,34 @@ def dubins_between_segments(
             if line_to_check.length > 0
             else poly_head_ring.contains(line_to_check)
         )
-    for intersection_point in intersection_points_buffer.geoms:
-        ipol_current = current_line_extended.interpolate(current_line_extended.project(intersection_point))
-        ipol_target = target_line_extended.interpolate(target_line_extended.project(intersection_point))
+    cnt = 0
+    while cnt < len(intersection_point_line_list) and len(ipol_candidates) == 0:
+        for intersection_point in intersection_points_buffer.geoms:
+            ipol_current = current_line_extended.interpolate(current_line_extended.project(intersection_point))
+            ipol_target = target_line_extended.interpolate(target_line_extended.project(intersection_point))
 
-        if intersection_point_line.is_empty or (
-            current_line_extended.project(ipol_current) < current_line_extended.project(nearest_intersection_point_to_point)
-            and target_line_extended.project(ipol_target) > target_line_extended.project(nearest_intersection_point_to_point)
-            and current_line_extended.project(ipol_current) - current_point_projection > 0
-            and (poly_head_ring.contains(intersection_point) == is_current_line_contained or headland_ring is None)
-        ):
-            ipol_candidates.append(
-                (
-                    current_line_extended.project(ipol_current) - current_point_projection,
-                    intersection_point,
-                    ipol_current,
-                    ipol_target,
+            if intersection_point_line.is_empty or (
+                current_line_extended.project(ipol_current) < current_line_extended.project(nearest_intersection_point_to_point)
+                and target_line_extended.project(ipol_target) > target_line_extended.project(nearest_intersection_point_to_point)
+                and current_line_extended.project(ipol_current) - current_point_projection > 0
+                and (headland_ring is None or poly_head_ring.contains(intersection_point) == is_current_line_contained)
+            ):
+                ipol_candidates.append(
+                    (
+                        current_line_extended.project(ipol_current) - current_point_projection,
+                        intersection_point,
+                        ipol_current,
+                        ipol_target,
+                    )
                 )
-            )
-    ipol_candidates.sort(key=lambda x: x[0])
+        if not exhaustive:
+            break
+        cnt += 1
+        if cnt < len(intersection_point_line_list):
+            nearest_intersection_point_to_point = intersection_point_line_list[cnt][1]
     if ipol_candidates == []:
         return None
-
+    ipol_candidates.sort(key=lambda x: x[0])
     for _, _, ipol_current, ipol_target in ipol_candidates:
         current_segment_new_coords = substring(
             current_line_extended,
@@ -799,3 +823,416 @@ def union_intersecting_geoms(geometries: List[BaseGeometry]) -> List[Polygon]:
         return union_intersecting_geoms(grouped_geoms)
 
     return grouped_geoms
+
+
+def check_segmentation(path: List[Point] | LineString | List[LineString],
+                       turning_headland: LinearRing | LineString,
+                       function_string: str,
+                       geom_from: BaseGeometry | None = None,
+                       geom_to: BaseGeometry | None = None) -> bool:
+    """Checks if the given path is segmeted correclty."""
+    segments = []
+    if isinstance(path, list) and (isinstance(path[0], Tuple) or path[0].geom_type == "Point"):
+        path = LineString(path)
+        segments, _ = segment_line(path, radius_threshold=1.35)
+    elif isinstance(path, list) and path[0].geom_type == "LineString":
+        segments = path
+    elif isinstance(path, LineString):
+        segments, _ = segment_line(path, radius_threshold=1.35)
+    for i in range(len(segments) - 1):
+        is_same_start_stop = segments[i].boundary.geoms[-1].distance(segments[i + 1].boundary.geoms[0]) < 1e-9
+        is_direction_change = abs(
+            angle_between_lines(LineString(segments[i].coords[-2:]), LineString(segments[i + 1].coords[:2]))
+            ) > 0.95 * pi
+        if not is_same_start_stop or not is_direction_change:
+            path_start_dist = path.project(segments[i].boundary.geoms[-1])
+            path_end_dist = path.project(segments[i + 1].boundary.geoms[0])
+            path_between = substring(path, path_start_dist, path_end_dist)
+            path_between = path_between  # to fix ruff errors
+            print("Segmented path is not segmented correctly")
+            return False
+    return True
+
+
+def recombine_ml_in_bounds(ml: MultiLineString,
+                           origin: Point,
+                           bound: LinearRing | Polygon) -> LineString:
+    """Recombines a MultiLineString into a LineString that does not cross the bounds.
+
+    The closest segment to the origin is guaranteed to be included in the resulting LineString.
+    Assumes that the MultiLineString is in order.
+    """
+    if ml is None or ml.is_empty:
+        return LineString()
+
+    geoms = list(ml.geoms)
+    if not geoms:
+        return LineString()
+
+    if len(geoms) == 1:
+        return geoms[0]
+
+    def _can_connect_without_crossing(connection_line: LineString, bound_poly: Polygon) -> bool:
+        """Check if a connection line can be made without crossing the polygon boundary."""
+        return not bound_poly.exterior.intersects(connection_line)
+
+    bound_poly = bound if isinstance(bound, Polygon) else Polygon(bound)
+    closest_idx = min(range(len(geoms)), key=lambda i: geoms[i].distance(origin))
+
+    # Start building result with the closest segment
+    result_coords = list(geoms[closest_idx].coords)
+
+    # Try to extend forward from the closest segment
+    current_idx = closest_idx
+    while current_idx < len(geoms) - 1:
+        next_idx = current_idx + 1
+
+        next_segment = geoms[next_idx]
+        end_point = Point(result_coords[-1])
+        start_point = Point(next_segment.coords[0])
+
+        connection = LineString([end_point, start_point])
+        if _can_connect_without_crossing(connection, bound_poly):
+            result_coords.extend(next_segment.coords[1:])
+            current_idx = next_idx
+        else:
+            break
+
+    # Try to extend backward from the closest segment
+    current_idx = closest_idx - 1
+    while current_idx > 0:
+
+        prev_segment = geoms[current_idx]
+        end_point = Point(prev_segment.coords[-1])
+        start_point = Point(result_coords[0])
+
+        # Check if connecting would cross the boundary
+        connection = LineString([end_point, start_point])
+        if _can_connect_without_crossing(connection, bound_poly):
+            result_coords = list(prev_segment.coords[:-1]) + result_coords
+            current_idx -= 1
+        else:
+            break
+
+    return LineString(result_coords) if len(result_coords) >= 2 else LineString()
+
+
+def direction_sgn_point_from_line(ref_line: LineString, target_point: Point) -> int:
+    """Determines the sign of the direction, the point lies away from the reference line."""
+    x1, y1 = ref_line.coords[0]
+    x2, y2 = ref_line.coords[-1]
+    cross = (x2 - x1) * (target_point.y - y1) - (y2 - y1) * (target_point.x - x1)
+    sign = 1
+    if cross < 0:
+        sign = -1
+    return sign
+
+
+def combine_paths(current_path: LineString, next_paths: List[LineString], safety_distance: float | None = None):
+    """Combine multiple LineStrings into one."""
+    sd = safety_distance if safety_distance is not None else 0.1
+    compound = current_path
+    for next_path in next_paths:
+        np_cu_pa, np_ne_pa = nearest_points(compound, next_path)
+        end_dist = compound.project(np_cu_pa) - sd
+        current_path_cut = substring(geom=compound, start_dist=0, end_dist=end_dist)
+        start_dist = next_path.project(np_ne_pa) + sd
+        next_path_cut = substring(geom=next_path, start_dist=start_dist, end_dist=next_path.length)
+        compound = LineString([*current_path_cut.coords, *next_path_cut.coords])
+    return compound
+
+
+def get_curve(
+        current_line_oriented: LineString,
+        target_line: LineString,
+        turning_radius: float,
+        step_size: float,
+        robot_point: Point | None,
+        border_buffer: LinearRing | None,
+        *,
+        extend_start_line: bool = True,
+        extend_target_line: bool = True) -> tuple[LineString, Point, list[Point]]:
+    """Return a curve between two line segments.
+
+    Args:
+        current_line_oriented: The starting line segment
+        target_line: The target line segment to connect to
+        turning_radius: The turning radius for the curve
+        step_size: Sampling step size for the path
+        robot_point: Current machine position or None to use the whole lines
+        border_buffer: Border for line extension limits or None
+        extend_start_line: Whether to extend the start line
+        extend_target_line: Whether to extend the target line
+
+    Returns
+    -------
+        Tuple of (path, intersection_point, [ipol_current, ipol_target]) or (None, None, None) on failure
+    """
+    if not all({
+        current_line_oriented and isinstance(current_line_oriented, LineString),
+        target_line and isinstance(target_line, LineString),
+        turning_radius and turning_radius > 0.0,
+        step_size and step_size > 0.0,
+        (robot_point is None or isinstance(robot_point, Point)),
+        (border_buffer is None or isinstance(border_buffer, LinearRing))
+            }):
+        print("getDubinsBetweenLineSegments: Invalid input parameters")
+        return None, None, None
+    current_line = (
+        current_line_oriented if robot_point is None
+        else substring(current_line_oriented, current_line_oriented.project(robot_point), current_line_oriented.length)
+    )
+    if not isinstance(current_line, LineString):
+        print("getCurve: robot_point projects to the end of current_line, resulting segment is not a LineString")
+        return None, None, None
+    line_distance = max(current_line.distance(target_line), turning_radius)
+
+    if extend_start_line:
+        current_line = extend_line(
+            current_line, distance=line_distance * 2, extend_front=extend_start_line, extend_back=False
+        )
+        if isinstance(current_line, MultiLineString):
+            current_line = LineString([coord for line in current_line.geoms for coord in line.coords])
+
+    if extend_target_line:
+        target_line = extend_line(
+            target_line, distance=line_distance * 2, extend_front=extend_target_line, extend_back=extend_target_line
+        )
+        if isinstance(target_line, MultiLineString):
+            target_line = LineString([coord for line in target_line.geoms for coord in line.coords])
+
+    buffering_sign = relative_orientation(current_line, target_line, turning_radius)
+
+    pivot_point = first_intersection(
+        current_line=current_line.offset_curve(buffering_sign * turning_radius),
+        intersector=target_line.offset_curve(buffering_sign * turning_radius)
+        )
+
+    arc = pivot_point.buffer(turning_radius, step_size).exterior
+    arc_start = tangential_intersection(current_line, arc, turning_radius * 0.01)
+    arc_end = tangential_intersection(target_line.reverse(), arc, turning_radius * 0.01)
+
+    arc = ring_with_origin_at(arc, arc_start)
+
+    if buffering_sign > 0:
+        arc = arc.reverse()
+
+    arc = substring(arc, 0, arc.project(arc_end))
+
+    return arc, pivot_point, [arc_start, arc_end]
+
+
+def tangential_intersection(current_line: LineString, circle: LinearRing, approximation_correction: float = 0.1):
+    """Returns a point on the line, that is also on the circle.
+
+    Args:
+        current_line: The line that gets touched by the circle
+        circle: The circle touching the line
+        approximation_correction: The distance from the line in which the function looks for intersections with the circle
+
+    Returns
+    -------
+        Tangential point on the line
+    """
+    intersection = current_line.buffer(approximation_correction).intersection(circle)
+
+    if isinstance(intersection, Point):
+        return intersection
+    if isinstance(intersection, LineString):
+        return current_line.interpolate(current_line.project(intersection.interpolate(0.5, True)))
+    if isinstance(intersection, MultiLineString):
+        closest_section = min(intersection.geoms, key=lambda section: current_line.project(section.interpolate(0.5, True)))
+        return current_line.interpolate(current_line.project(closest_section.interpolate(0.5, True)))
+    return None
+
+
+def first_intersection(current_line: LineString, intersector: LineString) -> Point | tuple[float] | None:
+    """Return the first point on the current line that lies in the intersection with the intersector.
+
+    Args:
+        current_line: The line that gets intersected. First refers to the direction of this line
+        intersector: The geometry that intersects the line
+
+    Returns
+    -------
+        First point on the line lying in the intersection.
+    """
+    intersection = current_line.intersection(intersector)
+
+    if intersection.is_empty:
+        return None
+    if isinstance(intersection, Point):
+        return intersection
+    if isinstance(intersection, MultiPoint):
+        intersection_points = list(intersection.geoms)
+        intersection_points.sort(key=current_line.project)
+        return intersection_points[0]
+
+    return intersection.coords[0]
+
+
+def relative_orientation(first_line: LineString, second_line: LineString, radius: float) -> int:
+    """Take two lines and decide the relative orientation.
+
+    i.e. if a turn around a circle with the given radius from the first line to the second line is a left or a right turn.
+    If no such turn exists an Error is raised.
+
+    Args:
+        first_line: the first line
+        second_line: the second line
+
+    Returns
+    -------
+        integer with 1 corresponds to right turn and -1 corresponds to left turn.
+
+    Raises
+    ------
+        ValueError: if no turn is possible
+    """
+    possible_intersection_directions = [
+        direction for direction in [-1, 1]
+        if first_intersection(
+            first_line.offset_curve(direction * radius),
+            second_line.offset_curve(direction * radius)) is not None
+        ]
+
+    if not possible_intersection_directions:
+        raise ValueError("No turns possible!")
+
+    if len(possible_intersection_directions) == 1:
+        return possible_intersection_directions[0]
+
+    direction = possible_intersection_directions[0]
+    if isinstance(first_line, MultiLineString):
+        first_line = LineString([coord for line in first_line.geoms for coord in line.coords])
+    if isinstance(second_line, MultiLineString):
+        second_line = LineString([coord for line in second_line.geoms for coord in line.coords])
+    first_line = first_line.offset_curve(direction * radius)
+    second_line = second_line.offset_curve(direction * radius)
+    intersection_point = first_intersection(first_line, second_line)
+    if isinstance(first_line, MultiLineString):
+        first_line = LineString([coord for line in first_line.geoms for coord in line.coords])
+    if isinstance(second_line, MultiLineString):
+        second_line = LineString([coord for line in second_line.geoms for coord in line.coords])
+    direction_point = first_intersection(first_line, second_line.offset_curve(0.01))
+    if direction_point is None:
+        return possible_intersection_directions[1]
+
+    return np.sign(first_line.project(intersection_point) - first_line.project(direction_point))
+
+
+def multi_poly_to_relevant_poly(mpoly: MultiPolygon, line: LineString) -> Polygon:
+    """
+    Extract a single polygon from a MultiPolygon that is relevant to a given line.
+
+    Finds polygons in the MultiPolygon that are touching (within 1e-4 distance)
+    the line. If multiple polygons touch the line, their union's convex hull is returned.
+    If a single polygon touches the line, that polygon is returned. If no Polygon is
+    touching the line, falls back to the closest Polygon
+
+    Parameters
+    ----------
+    mpoly : MultiPolygon
+        A collection of polygons to filter.
+    line : LineString
+        The reference line to find nearby polygons.
+
+    Returns
+    -------
+    Polygon
+        A single polygon that touches the line. Either the single touching polygon,
+        or the convex hull of the union of multiple touching polygons.
+    """
+    if isinstance(mpoly, MultiPolygon):
+        touching = [poly for poly in mpoly.geoms if poly.distance(line) < 1e-4]
+        if len(touching) > 1:
+            single_poly = unary_union(touching).convex_hull
+        elif len(touching) == 1:
+            single_poly = touching[0]
+        else:
+            single_poly = min(mpoly.geoms, key=lambda poly: poly.distance(line))
+    return single_poly
+
+
+def split_straight_endings(
+        path: LineString,
+        ref_line: LineString,
+        ang_tol_degree: float = 0.01,
+        dist_threshold: float = 1.0) -> Tuple[LineString, LineString, LineString]:
+    """Splits at the first curve and the last.
+
+    Uses an angle over 1 degree as the limit for a curve. If no curve is detected returns
+    the path and two None's
+
+    The ref_line ensures that the curve starts and begins at the ref_line or the extension of it
+    """
+    if len(path.coords) < 3:
+        return None, path, None
+    curve_start = None
+    curve_end = None
+
+    path = simplify(path, 1e-4)
+
+    # Find the start of the curve and remember its index
+
+    tolerance_straight = ang_tol_degree * pi / 180
+    ext_ref_line = extend_line(ref_line, 10 * path.length)
+
+    def check_curve_start(l1: LineString, l2: LineString) -> bool:
+        is_curve = abs(angle_between_lines(l1, l2)) > tolerance_straight
+        is_on_ref = ext_ref_line.distance(l1) < dist_threshold
+        # line might be in the opposite direction to the ref_line
+        is_parallel_to_ref = (abs(angle_between_lines(l1, ref_line)) < tolerance_straight
+                              or abs(angle_between_lines(l1.reverse(), ref_line)) < tolerance_straight)
+
+        return is_curve and is_on_ref and is_parallel_to_ref
+
+    curve_start_idx = None
+    for i, (c1, c2, c3) in enumerate(zip(path.coords, path.coords[1:], path.coords[2:], strict=False)):
+        l1 = LineString([c1, c2])
+        l2 = LineString([c2, c3])
+
+        if check_curve_start(l1, l2):
+            curve_start = path.project(Point(c2))
+            curve_start_idx = i + 1  # c2 is at index i+1 in the original coords
+            break
+    if curve_start is None:
+        return path, None, None
+
+    # Find the first curve from the other side
+    if curve_start_idx is not None:
+        # create loop over coordinate triplets from the end of the path to curve_start
+        j = len(path.coords) - curve_start_idx
+        for c1, c2, c3 in zip(path.coords[-1:-j:-1], path.coords[-2:-j - 1:-1], path.coords[-3:-j - 2:-1], strict=False):
+            l1 = LineString([c1, c2])
+            l2 = LineString([c2, c3])
+
+            if check_curve_start(l1, l2):
+                curve_end = path.project(Point(c2))
+                break
+
+    # Fallback
+    if curve_end is None:
+        curve_end = path.length
+
+    sd = 1e-4  # distance to prevent an overlap
+    path_start = substring(path, 0, max(curve_start - sd, 0))
+    path_curve = substring(path, curve_start, curve_end)
+    path_rest = substring(path, min(curve_end + sd, path.length), path.length)
+    return path_start, path_curve, path_rest
+
+
+def orthogonal_distance(line1: LineString, line2: LineString) -> float:
+    """Calculates the distance in orthogonal direction from line1 to line2.
+
+    Calculates the orthogonal vector and the vector between the two nearest points.
+    The dot product results in the orthogonal distance.
+    """
+    p1, p2 = nearest_points(line1, line2)
+    line1_direction = direction_of_line(line1)
+    between_vector = (p2.x - p1.x, p2.y - p1.y)
+
+    orthogonal = (-line1_direction[1], line1_direction[0])
+    orthogonal_dist = abs(between_vector[0] * orthogonal[0] + between_vector[1] * orthogonal[1])
+
+    return orthogonal_dist

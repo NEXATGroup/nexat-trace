@@ -24,8 +24,9 @@ class PostSteps(Enum):
     """
 
     CUTOUT_AVOIDANCE = 0  # runs first
-    EXTEND_START_END = 1
-    AB_LINE_INTERPOLATION = 2  # runs last
+    EVADE_OBSTACLES = 1
+    EXTEND_START_END = 2
+    AB_LINE_INTERPOLATION = 3  # runs last
 
 
 class RoutePlanningConfig:
@@ -122,6 +123,11 @@ class RoutePlanningConfig:
     - heuristic_corridor_angle
         Threshold angle (fraction of π rad: 0.5π = 90°) beyond which a curve is considered too sharp
         for the vehicle to pass without triggering a working corridor error.
+    - min_straight_stop_distance_to_obstacle
+        The minimal stopping distance between the vehicle midpoint and the obstacle segment, when driving straight at it.
+    - implement_extends_machine_width:
+        Boolean that determines, whether the machine width gets extended to the working width for collision purposes
+
 
     Debugging Parameters
     --------------------
@@ -248,7 +254,7 @@ class RoutePlanningConfig:
         # ----------- POSTPROCESSING PARAMETERS ------------ #
         #
 
-        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE, PostSteps.EXTEND_START_END]
+        _default_enabled_post_processing_steps = [PostSteps.CUTOUT_AVOIDANCE, PostSteps.EVADE_OBSTACLES]
 
         self.post_processing_steps = {}
         for step in PostSteps:
@@ -278,7 +284,9 @@ class RoutePlanningConfig:
         self.direction_change_extension_distance_steer = 9.0  # m
         self.direction_change_extension_distance_brake = 14.0  # m
         self.working_corridor_extension = False
+        self.implement_extends_machine_width = True
         self.heuristic_corridor_angle = 0.0  # fraction of π rad (0.5π = 90°)
+        self.min_straight_stop_distance_to_obstacle = 5  # m
 
         self.direct_curve_link_distance = 25.0  # m
 
@@ -328,7 +336,9 @@ class RoutePlanningConfig:
         new.direction_change_extension_distance_steer = self.direction_change_extension_distance_steer
         new.direction_change_extension_distance_brake = self.direction_change_extension_distance_brake
         new.working_corridor_extension = self.working_corridor_extension
+        new.implement_extends_machine_width = self.implement_extends_machine_width
         new.heuristic_corridor_angle = self.heuristic_corridor_angle
+        new.min_straight_stop_distance_to_obstacle = self.min_straight_stop_distance_to_obstacle
         new.direct_curve_link_distance = self.direct_curve_link_distance
         new.delay_on_direction_change = self.delay_on_direction_change
         new.min_ab_line_length = self.min_ab_line_length
@@ -362,6 +372,8 @@ class RoutePlanningConfig:
             f"  post_processing_steps={self.post_processing_steps},\n"
             f"  robust_curve_calculation_only={self.robust_curve_calculation_only},\n"
             f"  heuristic_corridor_angle={self.heuristic_corridor_angle}\n"
+            f"  min_straight_stop_distance_to_obstacle={self.min_straight_stop_distance_to_obstacle}\n"
+            f"  implement_extends_machine_width ={self.implement_extends_machine_width}\n"
             f"  _track_width={self._track_width},\n"
             f"  debug_prints={self.debug_prints},\n"
             f"  debug_plot_field={self.debug_plot_field},\n"
@@ -450,6 +462,7 @@ class RoutePlanningConfig:
             new.post_processing_steps[PostSteps[entry[0]]] = bool(entry[1])
         new.robust_curve_calculation_only = data["robust_curve_calculation_only"]
         new.heuristic_corridor_angle = data["heuristic_corridor_angle"]
+        new.min_straight_stop_distance_to_obstacle = data["min_straight_stop_distance_to_obstacle"]
         new.debug_plot_field = data["debug_plot_field"]
         new.debug_plot_track_graph = data["debug_plot_track_graph"]
         new.debug_plot_net_graph = data["debug_plot_net_graph"]
