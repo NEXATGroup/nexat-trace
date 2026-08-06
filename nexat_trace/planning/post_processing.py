@@ -259,7 +259,7 @@ def cutout_avoidance(route: Route) -> None:
             ).intersection(aligned_segment)
             if interpolated_on_ring.is_empty:
                 interpolated_on_ring = geom_tools.nearest_points(geom_tools.extend_line(
-                 curve_on, route._route_params.vehicle_turning_radius * 0.5
+                    curve_on, route._route_params.vehicle_turning_radius * 0.5
                 ),
                  aligned_segment
                 )[1]
@@ -298,7 +298,7 @@ def evade_rois(route: Route):
     original_path = LineString(route._path)
     cutout_segments = route._track_system.to_be_evaded_obstacles
     cutout_segments_buffered = [
-        cutout.buffer(route._route_params.working_width / 2, resolution= 40).exterior for cutout in cutout_segments]
+        cutout.buffer(route._route_params.working_width / 2, resolution = 40).exterior for cutout in cutout_segments]
 
     # is there anything to do here?
     if not any(original_path.intersects(segment) for segment in cutout_segments_buffered):

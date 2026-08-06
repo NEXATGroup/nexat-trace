@@ -979,14 +979,14 @@ def get_curve(
         (robot_point is None or isinstance(robot_point, Point)),
         (border_buffer is None or isinstance(border_buffer, LinearRing))
             }):
-        print("getDubinsBetweenLineSegments: Invalid input parameters")
+        print("get_curve: Invalid input parameters")
         return None, None, None
     current_line = (
         current_line_oriented if robot_point is None
         else substring(current_line_oriented, current_line_oriented.project(robot_point), current_line_oriented.length)
     )
     if not isinstance(current_line, LineString):
-        print("getCurve: robot_point projects to the end of current_line, resulting segment is not a LineString")
+        print("get_curve: robot_point projects to the end of current_line, resulting segment is not a LineString")
         return None, None, None
     line_distance = max(current_line.distance(target_line), turning_radius)
 
