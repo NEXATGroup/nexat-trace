@@ -165,7 +165,7 @@ class PrimaryTrackGraphNode(TrackGraphNode):
             route_params,
             headland_ring,
             inner_border,
-            implement_working_offset= route_params.implement_working_offset
+            implement_working_offset = route_params.implement_working_offset
         )
 
         # find turn curve radius middle point

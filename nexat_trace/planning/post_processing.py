@@ -259,7 +259,7 @@ def cutout_avoidance(route: Route) -> None:
             ).intersection(aligned_segment)
             if interpolated_on_ring.is_empty:
                 interpolated_on_ring = geom_tools.nearest_points(geom_tools.extend_line(
-                 curve_on, route._route_params.vehicle_turning_radius * 0.5
+                    curve_on, route._route_params.vehicle_turning_radius * 0.5
                 ),
                  aligned_segment
                 )[1]
@@ -298,7 +298,7 @@ def evade_rois(route: Route):
     original_path = LineString(route._path)
     cutout_segments = route._track_system.to_be_evaded_obstacles
     cutout_segments_buffered = [
-        cutout.buffer(route._route_params.working_width / 2, resolution= 40).exterior for cutout in cutout_segments]
+        cutout.buffer(route._route_params.working_width / 2, resolution = 40).exterior for cutout in cutout_segments]
 
     # is there anything to do here?
     if not any(original_path.intersects(segment) for segment in cutout_segments_buffered):
@@ -366,7 +366,7 @@ def evade_rois(route: Route):
 
             # TODO implement for only drive all?
             # route._route_params.corridor_strategy = CorridorStrategy.DRIVE_ALL.value
-            if path_around_obs is not None and route._route_params.corridor_strategy != CorridorStrategy.DRIVE_NONE.value:
+            if path_around_obs is not None and route._route_params.corridor_strategy != CorridorStrategy.DRIVE_NONE:
                 inner_border = route._full_inner_border
                 start_point_ab_candidate = min(
                     ((ab, ab.distance(all_intersections[0].start))for ab in route._track_system.ab_lines.geoms),
@@ -675,7 +675,7 @@ def assemble_path_around_obstacle(
             robot_point=None,
             border_buffer=bounds,
             extend_start_line=True,
-            extend_target_line=False)
+            extend_target_line=True)
 
         gen_path_2, _, _ = geom_tools.get_curve(
             obstacle_segment,
@@ -685,7 +685,7 @@ def assemble_path_around_obstacle(
             None,
             bounds,
             extend_start_line=True,
-            extend_target_line=False)
+            extend_target_line=True)
         if gen_path_1 is None or gen_path_2 is None:
             return None, None
         if debug_prints:

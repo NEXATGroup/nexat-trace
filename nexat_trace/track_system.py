@@ -100,7 +100,7 @@ class TrackSystem:
         List of LineStrings and/or LinearRings representing tracks that are supposed to be driven by the vehicle inside the field
         to avoid obstacles without dedicated headland tracks. These segments have to be rounded to the desired turning radius.
     to_be_evaded_obstacles: List[LineString | LinearRing]
-        List of Polygons representing obstacles, that should be avoided using and evasion move, which is
+        List of Lines or Rings representing obstacles, that should be avoided using and evasion move, which is
         basically a hook onto a segment to avoid the obstacle with enough clearance.
 
     Examples
