@@ -845,30 +845,31 @@ def working_corridor_of_ab_line(
         return None
 
 
+# TODO restructure this to use a polygon for the turning headland, that includes all cutouts?
 def get_corridor_line(
     ab_line: LineString,
-    working_width: float,
+    route_params: RoutePlanningConfig,
     turning_headland: LinearRing,
     inner_border: LinearRing | Polygon | MultiPolygon,
+    outer_turning_headland: LinearRing | None = None,
+    field_border: Polygon | LinearRing = None,
     implement_working_offset: float = 0.0
 ) -> LineString | None:
     """Returns the working corridor line of an ab line within a turning headland.
 
     Calculates the working corridor line. This respects the working width and the turning headland geometry.
     """
-    headland_poly = Polygon(turning_headland)
+    headland_poly = None
+    if outer_turning_headland is not None:
+        headland_poly = Polygon(outer_turning_headland, [turning_headland])
+    else:
+        headland_poly = Polygon(turning_headland)
     min_width = 0.0001
-    half_width = working_width / 2.0 - min_width
+    half_width = route_params.working_width / 2.0 - min_width
 
     # Resolve MultiPolygon to a single Polygon covering all parts near the ab_line
     if isinstance(inner_border, MultiPolygon):
-        touching = [poly for poly in inner_border.geoms if poly.distance(ab_line) < 1e-4]
-        if len(touching) > 1:
-            inner_border = unary_union(touching).convex_hull
-        elif len(touching) == 1:
-            inner_border = touching[0]
-        else:
-            inner_border = min(inner_border.geoms, key=lambda poly: poly.distance(ab_line))
+        inner_border = gt.multi_poly_to_relevant_poly(inner_border, ab_line)
 
     inner_border_poly = inner_border if isinstance(inner_border, Polygon) else Polygon(inner_border)
 
@@ -894,8 +895,14 @@ def get_corridor_line(
 
     extended = get_intersection_line_savely(ab_line, headland_poly)
     if extended is None or extended.is_empty:
-        extended = gt.extend_line_in_bounds(ab_line, inner_border_poly, inner_border.length)
-        extended = get_intersection_line_savely(extended, inner_border_poly)
+        if outer_turning_headland is not None:
+            # should change it to this
+            new_headland_poly = Polygon(outer_turning_headland, turning_headland)
+            extended = gt.extend_line_in_bounds(ab_line, new_headland_poly, inner_border.length)
+            extended = get_intersection_line_savely(extended, new_headland_poly)
+        else:
+            extended = gt.extend_line_in_bounds(ab_line, inner_border_poly, inner_border.length)
+            extended = get_intersection_line_savely(extended, inner_border_poly)
     else:
         extended = gt.extend_line_in_bounds(ab_line, headland_poly, headland_poly.length)
         extended = get_intersection_line_savely(extended, headland_poly)
@@ -910,25 +917,29 @@ def get_corridor_line(
     right_clipped = right_offset.intersection(inner_border_poly)
     middle_clipped = extended.intersection(inner_border_poly)
 
-    def fallback_line(offset_line: LineString) -> LineString:
+    def fallback_line(offset_line: LineString | Point) -> LineString:
         """Handels the case where an offset line is completely outside the inner border and thus the intersection is empty.
 
         This basically handels the edge of the field. Using nearest points is a bit dodgy but it works. Could lead to unnecessary
         hooks.
         """
-        p1, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[0])
-        p2, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[-1])
+        if isinstance(offset_line, Point):
+            p1 = offset_line
+            p2 = offset_line
+        else:
+            p1, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[0])
+            p2, _ = gt.nearest_points(inner_border_poly, offset_line.boundary.geoms[-1])
         if p1.distance(p2) < 0.01:
             # trick to avoid errors when both points are the same
             p1 = extended.boundary.geoms[-1]
             p2 = extended.boundary.geoms[0]
         return LineString([p1, p2])
 
-    if left_clipped is None or left_clipped.is_empty:
+    if left_clipped is None or left_clipped.is_empty or isinstance(left_clipped, Point):
         left_clipped = fallback_line(left_offset)
-    if right_clipped is None or right_clipped.is_empty:
+    if right_clipped is None or right_clipped.is_empty or isinstance(right_clipped, Point):
         right_clipped = fallback_line(right_offset)
-    if middle_clipped is None or middle_clipped.is_empty:
+    if middle_clipped is None or middle_clipped.is_empty or isinstance(middle_clipped, Point):
         middle_clipped = fallback_line(extended)
 
     # TODO find a good check to filter unnecessary hooks at cutouts
@@ -981,6 +992,76 @@ def get_corridor_line(
         valid_end = extended.length / 2 + 0.01
 
     corridor_line = gt.substring(extended, valid_start, valid_end)
+
+    if field_border is not None:
+        corridor_line = collision_check(
+            path=corridor_line, field_border=field_border, route_params=route_params, current_point=ab_line.boundary.geoms[0])
+
     if isinstance(corridor_line, LineString) and not corridor_line.is_empty:
         return remove_repeated_points(corridor_line, 0.01)
     return None  # remove_repeated_points(ab_line, 0.01)
+
+
+def collision_check(path: LineString,
+                    field_border: Polygon | LinearRing,
+                    route_params: RoutePlanningConfig,
+                    current_point: Point) -> LineString:
+    """Validates and trims a path to avoid collisions with the field boundary.
+
+    Checks if a path collides with obstacles outside the field boundary by buffering the path
+    based on the machine's working width or track width. If collisions are detected, finds the
+    collision-free segment of the path nearest to the current position. The field_border
+    should already account for implement safety offsets to ensure the machine stays clear of
+    obstacles when traveling at the boundary.
+
+    Args:
+        path: The proposed path to validate for collisions.
+        field_border: The field boundary (as a Polygon or LinearRing), where the holes define unsafe areas.
+        route_params: Route planning config providing machine dimensions (working_width, track_width,
+                     and implement_extends_machine_width flag).
+        current_point: The current machine position, used to select the best collision-free segment
+                      if the path must be trimmed.
+
+    Returns
+    -------
+        The original path if no collisions are detected, or a trimmed LineString representing the
+        longest collision-free segment closest to current_point. Returns the original path if no
+        safe trimmed segment can be found.
+    """
+    best_candidate = None
+    path_candidate = None
+    field_border_poly = Polygon(field_border) if isinstance(field_border, LinearRing) else field_border
+    if field_border_poly is not None and isinstance(path, LineString) and not path.is_empty:
+        collision_buffer_distance = (route_params.working_width / 2 if route_params.implement_extends_machine_width
+                                     else route_params._track_width / 2)
+        collision_buffer = path.buffer(collision_buffer_distance, resolution=45, cap_style='flat')
+        difference_polys = collision_buffer.difference(field_border_poly)
+        if ((difference_polys is None or difference_polys.is_empty)
+                and isinstance(path, LineString) and not path.is_empty):
+            return remove_repeated_points(path, 0.01)
+        if isinstance(difference_polys, Polygon):
+            difference_polys = MultiPolygon([difference_polys])
+        elif isinstance(difference_polys, GeometryCollection):
+            polys = [g for g in difference_polys.geoms if isinstance(g, Polygon)]
+            if polys:
+                difference_polys = MultiPolygon(polys) if len(polys) > 0 else None
+
+        if isinstance(difference_polys, MultiPolygon) and not difference_polys.is_empty:
+            min_collision_dists = [0]
+            curr_point_proj = path.project(current_point)
+            for poly in difference_polys.geoms:
+                points_poly = [Point(coord) for coord in poly.exterior.coords]
+                projections = [path.project(point) for point in points_poly]
+                first_collision_dist = min(projections, key= lambda proj: abs(proj - curr_point_proj))
+                min_collision_dists.append(first_collision_dist)
+            min_collision_dists.sort()
+            min_collision_dists.append(path.length)
+            best_dist = float('inf')
+            for i in range(1, len(min_collision_dists)):
+                path_candidate = gt.substring(path, min_collision_dists[i - 1], min_collision_dists[i])
+                if current_point.distance(path_candidate) < best_dist:
+                    best_dist = current_point.distance(path_candidate)
+                    best_candidate = path_candidate
+        if best_candidate:
+            best_candidate = best_candidate.intersection(field_border_poly)
+    return best_candidate if best_candidate is not None else path

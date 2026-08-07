@@ -1,14 +1,28 @@
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
 
-from shapely import LinearRing, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, remove_repeated_points
-from shapely.ops import substring
+from shapely import (
+    LinearRing,
+    LineString,
+    MultiLineString,
+    MultiPoint,
+    MultiPolygon,
+    Point,
+    Polygon,
+    minimum_bounding_radius,
+    remove_repeated_points,
+    simplify,
+)
+from shapely.ops import split, substring
 
 from nexat_trace.planning import curve_calculation
+from nexat_trace.planning.curve_calculation import insert_hook_stops_to_ab, insert_hook_stops_to_headland
 from nexat_trace.planning.route import Route
-from nexat_trace.shared.config import PostSteps
+from nexat_trace.shared.config import CorridorStrategy, PostSteps, RoutePlanningConfig
+from nexat_trace.shared.exceptions import RoutePlanningError
 from nexat_trace.util import geom_tools
+from nexat_trace.util.field_conversion import get_corridor_line
 
 """
 This module defines post processing steps for routes
@@ -20,16 +34,20 @@ and their corresponding functions in the FUNCTIONS dictionary.
 """
 
 
+@dataclass
+class Intersect:
+    """Class holding relevant data of the intersection."""
+
+    start: Point
+    end: Point
+    segment: LinearRing
+    centroid: Point
+
+
 def cutout_avoidance(route: Route) -> None:
     """
     Checks a given Route if the path intersects with any specialized cutout segments and changes the path accordingly.
     """
-
-    @dataclass
-    class Intersect:
-        start: Point
-        end: Point
-        segment: LinearRing
 
     original_path = LineString(route._path)
     cutout_segments = route._track_system.obstacle_avoidance_segments
@@ -47,67 +65,11 @@ def cutout_avoidance(route: Route) -> None:
     start_end: List[Point] = []
 
     # Find intersections between cutout segments and ab lines
-    for segment in cutout_segments:
+    all_intersections, start_end = find_intersections(
+        original_path, cutout_segments, route._track_system.outer_border, route._route_params.working_width
+        )
 
-        intersections = original_path.intersection(segment)
-
-        # Intersections
-        if isinstance(intersections, (MultiPoint, LineString)):
-            if intersections.is_empty:
-                continue
-
-            if isinstance(intersections, LineString):
-                intersections = [
-                    Point(intersections.coords[0]),
-                    Point(intersections.coords[-1]),
-                ]
-
-            intersections = list(intersections.geoms)
-            intersections.sort(key=lambda intersect: original_path.project(intersect))
-
-            # Intersection at start / end
-            if len(intersections) % 2 != 0:
-
-                if (original_path.project(Point(intersections[1]))
-                        - original_path.project(Point(intersections[0]))
-                        > original_path.project(Point(intersections[-1]))
-                        - original_path.project(Point(intersections[-2]))):
-
-                    start_end.append(intersections.pop(0))
-
-                else:
-                    start_end.append(intersections.pop(-1))
-
-            # Intersection at headland
-            if (len(intersections) > 4 and
-                    original_path.project(Point(intersections[-1]))
-                    - original_path.project(Point(intersections[0]))
-                    < 4 * route._route_params.working_width  # Circle circumference approximation
-                    and route._field_border.dwithin(segment, route._route_params.working_width / 2)):
-                all_intersections.append(Intersect(intersections[0], intersections[-1], segment))
-                continue
-
-        # Start / Endpoint ?
-        elif isinstance(intersections, Point):
-            start_end.append(intersections)
-
-        for i in range(0, len(intersections), 2):
-            all_intersections.append(Intersect(intersections[i], intersections[i + 1], segment))
-
-    while start_end:
-
-        intersection = start_end.pop(0)
-        dist = original_path.project(intersection)
-
-        if dist > 0.5:
-            while original_path.project(current_path[-1]) > dist:
-                current_path.pop(-1)
-            current_path.append(intersection)
-
-        else:
-            while original_path.project(Point(current_path[0])) < dist:
-                current_path.pop(0)
-            current_path.insert(0, intersection)
+    current_path = cut_to_start_end(start_end, current_path, original_path)
 
     all_intersections.sort(key=lambda intersect: original_path.project(intersect.start))
     final_path: List[Point] = [current_path.pop(0)]
@@ -297,9 +259,9 @@ def cutout_avoidance(route: Route) -> None:
             ).intersection(aligned_segment)
             if interpolated_on_ring.is_empty:
                 interpolated_on_ring = geom_tools.nearest_points(geom_tools.extend_line(
-                curve_on, route._route_params.vehicle_turning_radius * 0.5
+                    curve_on, route._route_params.vehicle_turning_radius * 0.5
                 ),
-                aligned_segment
+                 aligned_segment
                 )[1]
             if isinstance(interpolated_on_ring, MultiPoint):
                 interpolated_on_ring = list(interpolated_on_ring.geoms)[0]
@@ -315,17 +277,566 @@ def cutout_avoidance(route: Route) -> None:
                     + cut_segment_path_points
                 )
 
-            segment_path_points = (
+            segment_path_points = LineString(
                 [Point(coord) for coord in curve_on_ab_segment.coords]
                 + [Point(coord) for coord in curve_on.coords]
                 + cut_segment_path_points
                 + [Point(coord) for coord in curve_off.coords]
                 + [Point(coord) for coord in rest_path.coords]
             )
+            segment_path_corrds = list(simplify(segment_path_points, 5e-4).coords)
+            segment_path_points = [Point(coord) for coord in segment_path_corrds]
 
             final_path.extend(segment_path_points)
             last_intersection = intersection
     _rebuild_line(route, final_path)
+
+
+def evade_rois(route: Route):
+    """Calculates the evasion maneuvers araound an obstacle and insert them into the path."""
+
+    original_path = LineString(route._path)
+    cutout_segments = route._track_system.to_be_evaded_obstacles
+    cutout_segments_buffered = [
+        cutout.buffer(route._route_params.working_width / 2, resolution = 40).exterior for cutout in cutout_segments]
+
+    # is there anything to do here?
+    if not any(original_path.intersects(segment) for segment in cutout_segments_buffered):
+        return
+
+    current_path = route._path.copy()
+
+    if not all(isinstance(segment, (LinearRing, LineString)) for segment in cutout_segments):
+        raise TypeError("not all obstacle_avoidance_segments were of types LineString or LinearRing")
+
+    all_intersections: List[Intersect] = []
+    start_end: List[Point] = []
+
+    # Find intersections between cutout segments and ab lines
+    all_intersections, start_end = find_intersections(
+        original_path, cutout_segments_buffered, route._track_system.outer_border, route._route_params.working_width
+        )
+
+    current_path = cut_to_start_end(start_end, current_path, original_path)
+
+    all_intersections.sort(key=lambda intersect: original_path.project(intersect.start))
+    final_path: List[Point] = [current_path.pop(0)]
+
+    # Morph Intersections into curves and sort into final path
+    while current_path:
+
+        # Free To Go or points on path till next obstacle
+        if (not all_intersections
+                or original_path.project(Point(current_path[0])) < original_path.project(all_intersections[0].start)):
+            final_path.append(current_path.pop(0))
+        else:
+            # we need to curve around the obstacle
+            # but first first give space for the start point of the maneuver
+            while (
+                original_path.project(final_path[-1])
+                > max(original_path.project(all_intersections[0].start) - route._route_params.vehicle_turning_radius, 0)
+            ):
+                final_path.pop()
+            # the path around
+            obstacle = min(cutout_segments, key=lambda seg: all_intersections[0].centroid.distance(seg))
+            path_project_afer = (
+                original_path.project(all_intersections[0].end)
+                + route._route_params.working_width
+                + route._route_params.vehicle_turning_radius
+            )
+            start_segment = geom_tools.substring(original_path, original_path.project(final_path[-1]), path_project_afer + 0.1)
+            current_point = final_path[-1] if len(final_path) > 0 else Point(start_segment.coords[0])
+
+            bounding_ab_lines = determine_bounding_abs(
+                obstacle,
+                route._track_system.ab_lines,
+                route._route_params.working_width,
+                route._route_params._track_width)
+
+            path_around_obs = calculate_obstacle_evasion(
+                start_segment,
+                current_point,
+                route._route_params.working_width,
+                obstacle,
+                route._route_params.debug_prints,
+                bounding_ab_lines,
+                route._route_params.vehicle_turning_radius,
+                route._track_system.outer_border.exterior,
+            )
+
+            # TODO implement for only drive all?
+            # route._route_params.corridor_strategy = CorridorStrategy.DRIVE_ALL.value
+            if path_around_obs is not None and route._route_params.corridor_strategy != CorridorStrategy.DRIVE_NONE:
+                inner_border = route._full_inner_border
+                start_point_ab_candidate = min(
+                    ((ab, ab.distance(all_intersections[0].start))for ab in route._track_system.ab_lines.geoms),
+                    key=lambda t: t[1]
+                    )
+                end_point_ab_candidate = min(
+                    ((ab, ab.distance(all_intersections[0].end))for ab in route._track_system.ab_lines.geoms),
+                    key=lambda t: t[1]
+                    )
+                ab_line = min([start_point_ab_candidate, end_point_ab_candidate], key=lambda ab: ab[1])[0]
+                outer_turning_head = route._target_headlands[0]
+                path_with_hooks = insert_hooks_around_obs(
+                    path_around_obs,
+                    obstacle,
+                    inner_border,
+                    outer_turning_head,
+                    ab_line,
+                    route._route_params,
+                    route._track_system.outer_border
+                    )
+                path_around_obs = path_with_hooks if path_with_hooks is not None else path_around_obs
+            if path_around_obs is None:
+                # this should only be at start and end and if we don't have enough space
+                if len(final_path) == 0:
+                    final_path.append(all_intersections[0].end)
+                elif original_path.project(all_intersections[0].end) - original_path.length < 5:
+                    final_path.append(all_intersections[0].start)
+            else:
+                final_path.extend([Point(coord) for coord in path_around_obs.coords])
+
+            while len(current_path) > 0 and original_path.project(final_path[-1]) > original_path.project(current_path[0]):
+                current_path.pop(0)
+
+            all_intersections.pop(0)
+    _rebuild_line(route, final_path)
+
+
+def find_intersections(path: LineString,
+                       obstacles: List[Polygon] | List[LinearRing],
+                       field_border: LinearRing,
+                       working_width: float = 14.0) -> Tuple[List[Intersect], List[Point]]:
+    """Finds the intersections of the path with the obstacles.
+
+    Returns the info about the intersection as an Intersect object. The centroid is used to identify the obstacle
+    """
+    all_intersections: List[Intersect] = []
+    start_end: List[Intersect] = []
+
+    for obstacle_orig in obstacles:
+        obstacle = obstacle_orig.exterior if isinstance(obstacle_orig, Polygon) else obstacle_orig
+        # Get the centroid for obstacle identification
+        if hasattr(obstacle, 'centroid'):
+            centroid = obstacle.centroid
+        else:
+            centroid = obstacle
+
+        intersections = path.intersection(obstacle)
+
+        # Intersections
+        if isinstance(intersections, (MultiPoint, LineString)) and intersections.is_empty:
+            continue
+
+        # Handle different intersection types
+        intersection_points: List[Point] = []
+
+        if isinstance(intersections, LineString):
+            # LineString intersection: use start and end points
+            intersection_points = [
+                Point(intersections.coords[0]),
+                Point(intersections.coords[-1]),
+            ]
+        elif isinstance(intersections, MultiPoint):
+            # Multiple points: convert to list and sort by projection on path
+            intersection_points = list(intersections.geoms)
+            intersection_points.sort(key=lambda p: path.project(p))
+            if len(intersection_points) % 2 != 0:
+                # ungerade nur im Fall unwahrscheinlichen Fall einer Tangente oder wenn Start oder Stop im obstacle liegt.
+                poly_obstacle = Polygon(obstacle) if isinstance(obstacle, LinearRing) else obstacle
+                if poly_obstacle.contains(path.boundary.geoms[0]):
+                    start_end.append(intersection_points.pop(0))
+                elif poly_obstacle.contains(path.boundary.geoms[-1]):
+                    start_end.append(intersection_points.pop(-1))
+                # when the path starts in an obstacle it also should end in one for even numer of intersection points
+                no_left_over_half_crosses = True
+                no_left_over_half_crosses = no_left_over_half_crosses and not poly_obstacle.contains(path.boundary.geoms[0])
+                no_left_over_half_crosses = no_left_over_half_crosses and not poly_obstacle.contains(path.boundary.geoms[-1])
+                if poly_obstacle.contains(path.boundary.geoms[0]) or poly_obstacle.contains(path.boundary.geoms[-1]):
+                    print("Intersections are ordered unexpectedly")
+                    raise RoutePlanningError("Intersections are ordered unexpectedly.")
+            if (len(intersection_points) > 4 and
+                path.project(Point(intersection_points[-1]))
+                - path.project(Point(intersection_points[0]))
+                < 4 * working_width  # Circle circumference approximation
+                    and field_border.dwithin(obstacle, working_width / 2)):
+                all_intersections.append(Intersect(intersection_points[0], intersection_points[-1], obstacle, centroid))
+                continue
+        elif isinstance(intersections, Point):
+            start_end.append(intersections)
+
+        # Pair up intersection points (start and end of each intersection segment)
+        for i in range(0, len(intersection_points) - 1, 2):
+            if i + 1 < len(intersection_points):
+                all_intersections.append(Intersect(
+                    start=intersection_points[i],
+                    end=intersection_points[i + 1],
+                    segment=obstacle,
+                    centroid=centroid
+                ))
+
+    return all_intersections, start_end
+
+
+def cut_to_start_end(start_end: List[Point], current_path: LineString, original_path: LineString) -> LineString:
+    """Cuts the current path to start at the first intersection and end at the last.
+
+    This does only make sense, if the start or end of the original path lies within an obstacle
+    """
+    while start_end:
+
+        intersection = start_end.pop(0)
+        dist = original_path.project(intersection)
+
+        if dist > 0.5:
+            while original_path.project(current_path[-1]) > dist:
+                current_path.pop(-1)
+            current_path.append(intersection)
+
+        else:
+            while original_path.project(Point(current_path[0])) < dist:
+                current_path.pop(0)
+            current_path.insert(0, intersection)
+
+    return current_path
+
+
+def calculate_obstacle_evasion(
+        segment: LineString,
+        current_point: Point,
+        working_width: float,
+        obstacle: Polygon,
+        debug_prints: bool,
+        bounding_ablines: LineString | MultiLineString,
+        turning_radius: float,
+        bounds: LinearRing,
+) -> LineString:
+    """Calculate an evasion path around an obstacle using a circular arc with clearance.
+
+    Generates a smooth detour around the given obstacle by:
+    1. Projecting the obstacle centroid onto the original segment
+    2. Creating a circular arc with buffer offset for working width and cabin clearance
+    3. Connecting start → arc → target using the shorter arc path
+    4. Optionally using AB-lines as the evasion path if the arc crosses them
+    5. Smoothing connections with Dubins curves
+
+    Args:
+        segment: The original path segment to detour from.
+        current_point: Current vehicle position (used for Dubins curve generation).
+        working_width: Vehicle working width in meters.
+        obstacle: Polygon obstacle to evade.
+        debug_prints: If True, print debug messages for troubleshooting.
+        bounding_ablines: AB-lines that may be used as alternative evasion paths.
+        turning_radius: Vehicle turning radius for Dubins curve generation.
+
+    Returns
+    -------
+        LineString of the complete evasion path (start_segment → arc → target_segment),
+        or None if evasion calculation fails.
+    """
+    # TODO decide whether to put this into geom_tools, curve_calculation or leave it here
+    # TODO derive these from route_params
+    # Split segment at the obstacle projection point
+    obstacle_centroid = obstacle.centroid
+    split_distance = segment.project(obstacle_centroid)
+    # Ensure we don't split at the very start or end
+    split_distance = max(1.0, min(split_distance, segment.length - 1.0))
+
+    # Use width as split offset so the arc endpoints land exactly on
+    # start_segment end / target_segment start
+    mbr = minimum_bounding_radius(obstacle)
+    split_offset = max(0.5, mbr)
+    start_segment = substring(segment, 0, split_distance - split_offset)
+    target_segment = substring(segment, split_distance + split_offset, segment.length)
+
+    if start_segment is None or start_segment.is_empty or target_segment is None or target_segment.is_empty:
+        print(
+            f"calculate_path_around_obstacle: segment split failed (split_dist={split_distance:.1f},"
+            + f"seg_len={segment.length:.1f})"
+            )
+        return None
+
+    # Split the circle arc using the original segment as cutting line
+    obstacle_buffered = obstacle.buffer(working_width / 2, resolution=40).exterior
+    parts = split(LineString(obstacle_buffered), segment).geoms
+    if len(parts) == 3:
+        parts = [parts[1], LineString(list(parts[-1].coords) + list(parts[0].coords))]
+
+    best_short_path = None
+    # TODO collision check with outer border
+    # TODO more than two intersections <--- well in theory that just be handled by the amount of intersections
+    # TODO Debug LineString split into two for no apparent reason.
+    if len(parts) >= 2:
+        # Pick the shorter arc – it goes around the near side of the obstacle. <--- for straight lines
+        candidate = min(parts, key=lambda p: p.length)
+        # Orient so it goes from start_segment end → target_segment start
+        if candidate.boundary.geoms[0].distance(
+                start_segment.boundary.geoms[-1]) > candidate.boundary.geoms[-1].distance(start_segment.boundary.geoms[-1]):
+            candidate = candidate.reverse()
+        best_short_path = candidate
+
+    if best_short_path is None and debug_prints:
+        print("calculate_path_around_obstacle: Could not split circle into two parts on either side")
+        return None
+    short_path = best_short_path
+
+    # this may cause trouble with hooks
+    if bounding_ablines is not None and bounding_ablines.intersects(short_path):
+        if debug_prints:
+            print("Evasion move crosses AB-line, use this as obstacle path!")
+        ab_path = (bounding_ablines if isinstance(bounding_ablines, LineString)
+                   else min(bounding_ablines.geoms, key=lambda ab_line: ab_line.distance(short_path))
+                   )
+        intersections = short_path.intersection(ab_path)
+        if isinstance(intersections, MultiPoint) and len(intersections.geoms) == 2:
+            start_point = min(intersections.geoms, key=lambda point: short_path.project(point))
+            end_point = max(intersections.geoms, key=lambda point: short_path.project(point))
+            ab_path_substring = substring(ab_path, ab_path.project(start_point), ab_path.project(end_point))
+
+            # Validate the extracted AB-path segment has viable geometry for evasion
+            # Check: 1) minimum length to maneuver, 2) proximity only to the extracted segment (not entire AB line)
+            min_maneuver_length = working_width * 0.5
+            if (ab_path_substring is None or ab_path_substring.is_empty or
+                ab_path_substring.length < min_maneuver_length or
+                    segment.dwithin(ab_path_substring, 1)):  # Check only the portion we'll use
+                return None
+
+            ab_path = ab_path_substring
+            start_arc_segment = substring(short_path, 0, short_path.project(start_point))
+            end_arc_segment = substring(short_path, short_path.project(end_point, True), 1, True)
+            gen_path_1 = None
+            gen_path_2 = None
+            gen_path_1, _, _ = geom_tools.get_curve(
+                current_line_oriented=start_arc_segment,
+                target_line=ab_path,
+                turning_radius=turning_radius,
+                step_size=32.0,
+                robot_point=None,
+                border_buffer=None,
+                extend_start_line=True,
+                extend_target_line=True)
+            gen_path_2, _, _ = geom_tools.get_curve(
+                ab_path,
+                end_arc_segment,
+                turning_radius,
+                32.0,
+                None,
+                None,
+                extend_start_line=True,
+                extend_target_line=True)
+
+            short_path = geom_tools.combine_paths(current_path=start_arc_segment, next_paths=[gen_path_1, ab_path])
+            short_path = geom_tools.combine_paths(current_path=short_path, next_paths=[gen_path_2, end_arc_segment])
+        else:
+            return None
+    gen_path, smoothed_evasion = assemble_path_around_obstacle(
+        start_segment=start_segment,
+        obstacle_segment=short_path,
+        target_segment=target_segment,
+        current_point=None,
+        turning_radius=turning_radius,
+        bounds=bounds
+        )
+    if gen_path is None:
+        if debug_prints:
+            print("calculate_path_around_obstacle: assemble_path_around_obstacle returned None")
+        return None
+
+    return gen_path if gen_path is not None else None
+
+
+def assemble_path_around_obstacle(
+        start_segment: LineString,
+        obstacle_segment: LineString,
+        target_segment: LineString,
+        current_point: Point | None,
+        turning_radius: float,
+        bounds: LinearRing,
+        debug_prints: bool = False) -> tuple[LineString | None, LineString | None]:
+    """Calculate tear around maneuver for a given segment.
+
+    Connects start_segment → obstacle_segment → target_segment using Dubins curves.
+    Falls back to direct concatenation if Dubins connection fails.
+
+    Returns
+    -------
+        Tuple of (full_path, smoothed_evasion) where smoothed_evasion is the
+        Dubins-smoothed arc portion only (gen_path_1 + obstacle_segment + gen_path_2).
+    """
+    try:
+        gen_path_1 = None
+        gen_path_2 = None
+        gen_path_1, _, _ = geom_tools.get_curve(
+            current_line_oriented=start_segment,
+            target_line=obstacle_segment,
+            turning_radius=turning_radius,
+            step_size=32.0,
+            robot_point=None,
+            border_buffer=bounds,
+            extend_start_line=True,
+            extend_target_line=True)
+
+        gen_path_2, _, _ = geom_tools.get_curve(
+            obstacle_segment,
+            target_segment,
+            turning_radius,
+            32.0,
+            None,
+            bounds,
+            extend_start_line=True,
+            extend_target_line=True)
+        if gen_path_1 is None or gen_path_2 is None:
+            return None, None
+        if debug_prints:
+            print(f"assemble_path_around_obstacle: gen_path_1={gen_path_1 is not None}, gen_path_2={gen_path_2 is not None}")
+
+        if gen_path_1 is not None and gen_path_2 is not None:
+            smoothed_evasion = geom_tools.combine_paths(current_path=gen_path_1, next_paths=[obstacle_segment, gen_path_2])
+            gen_path = geom_tools.combine_paths(start_segment, [gen_path_1, obstacle_segment, gen_path_2, target_segment])
+            return gen_path, smoothed_evasion
+
+        # Fallback: direct concatenation when Dubins connection fails
+        # The obstacle_segment endpoints already lie on start/target segments,
+        # so a direct connection is geometrically valid.
+        if debug_prints:
+            print("assemble_path_around_obstacle: Dubins failed, using direct concatenation fallback")
+        if gen_path_1 is not None:
+            gen_path = geom_tools.combine_paths(start_segment, [gen_path_1, obstacle_segment])
+            gen_path = (
+                geom_tools.combine_paths(gen_path, [gen_path_2, target_segment]) if gen_path_2 is not None
+                else gen_path
+            )
+        elif gen_path_2 is not None:
+            gen_path = start_segment
+            if gen_path is not None:
+                obstacle_with_target = geom_tools.combine_paths(obstacle_segment, [gen_path_2, target_segment])
+                if obstacle_with_target is not None:
+                    gen_path = LineString([*gen_path.coords, *obstacle_with_target.coords])
+        else:
+            # Both Dubins failed — concatenate all segments directly
+            gen_path = LineString([*start_segment.coords, *obstacle_segment.coords, *target_segment.coords])
+        return gen_path, obstacle_segment
+
+    except Exception as e:
+        print(f"assemble_path_around_obstacle failed: {e}")
+        return None, None
+
+
+def insert_hooks_around_obs(path_around_obs: LineString,
+                            obstacle: LinearRing,
+                            inner_border: MultiPolygon,
+                            outer_turning_head: LinearRing,
+                            ab_line: LineString,
+                            route_params: RoutePlanningConfig,
+                            field_border: Polygon | LinearRing) -> LineString:
+    """Calculates the working corridor error and insert the hook curves to the obstacle."""
+
+    straight_buffer = route_params.min_straight_stop_distance_to_obstacle
+    # make a Polygon without holes out of the LinearRing
+    obstacle_exterior = obstacle.buffer(straight_buffer, quad_segs=32, cap_style='flat').exterior
+    turning_headland: Polygon = Polygon(obstacle_exterior)  # poly without holes
+    # this is for checking collisions at the side
+    field_border_poly = (field_border.difference(Polygon(obstacle)) if isinstance(field_border, Polygon)
+                         else Polygon(field_border, [obstacle]))
+    # here I am missing support for multiple cutouts near each other
+    turning_head_field = Polygon(outer_turning_head, [obstacle_exterior])
+    inner_border_obs = inner_border.difference(turning_headland, grid_size=0)
+    curve_start = Point(path_around_obs.coords[0])
+    curve_end = Point(path_around_obs.coords[-1])
+    corridor_error_start = curve_start.distance(obstacle)
+    corridor_error_end = curve_end.distance(obstacle)
+    # this assumes a circle buffer around the true obstacle
+    oriented_ab = ab_line
+    if path_around_obs.project(Point(ab_line.coords[0])) > path_around_obs.project(Point(ab_line.coords[-1])):
+        oriented_ab = ab_line.reverse()
+
+    def split_ab_at_obs(oriented_ab: LineString, obstacle: Polygon) -> Tuple[LineString | None, LineString | None]:
+        """Splits the ab line into a before and after part at the obstalce."""
+        split_ab = oriented_ab.difference(obstacle)
+        if isinstance(split_ab, MultiLineString):
+            split_ab = list(split_ab.geoms)
+        if isinstance(split_ab, list):
+            if len(split_ab) > 2:
+                raise RoutePlanningError("Unexpected number of splitted ab lines.")
+            ab_lines = sorted(split_ab, key= lambda ab: ab.distance(path_around_obs.boundary.geoms[0]))
+            ab_line_before = ab_lines[0]
+            ab_line_after = ab_lines[1]
+        else:
+            path_dist_ab = path_around_obs.project(split_ab.boundary.geoms[0])
+            path_dist_obs = path_around_obs.project(obstacle.centroid)
+            if path_dist_ab < path_dist_obs:
+                ab_line_before = split_ab
+                ab_line_after = None
+            else:
+                ab_line_before = None
+                ab_line_after = split_ab
+        return ab_line_before, ab_line_after
+
+    ab_line_before, ab_line_after = split_ab_at_obs(oriented_ab, turning_headland)
+    if ab_line_after is None or ab_line_before is None:
+        ab_line_before, ab_line_after = split_ab_at_obs(
+            oriented_ab, turning_headland. buffer(route_params.working_width / 2, quad_segs=32, cap_style='flat'))
+    # I need to split the path in its curve part and its straight line parts
+    path_start, curve, path_end = geom_tools.split_straight_endings(path_around_obs, ab_line)
+    path_with_hooks = curve
+    if path_with_hooks is None:
+        return None
+    # its a bit tricky here, regarding the correct calculation of the working corridor and the extensions
+    if ab_line_before is not None:
+        start_corridor = get_corridor_line(ab_line_before,
+                                           route_params,
+                                           obstacle_exterior,
+                                           inner_border_obs,
+                                           outer_turning_headland = outer_turning_head,
+                                           field_border=field_border_poly)
+        if (
+            corridor_error_start > route_params.corridor_threshold and inner_border.intersects(ab_line_before)
+            and not turning_headland.contains(ab_line_before)
+                ):
+            path_with_hooks = insert_hook_stops_to_headland(
+                path_with_hooks, start_corridor, turning_head_field, route_params, field_border_poly)
+    if ab_line_after is not None:
+        end_corridor = get_corridor_line(ab_line=ab_line_after,
+                                         route_params=route_params,
+                                         turning_headland=obstacle_exterior,
+                                         inner_border=inner_border_obs,
+                                         outer_turning_headland=outer_turning_head,
+                                         field_border=field_border_poly)
+        if (
+            corridor_error_end > route_params.corridor_threshold and inner_border.intersects(ab_line_after)
+            and not turning_headland.contains(ab_line_after)
+                ):
+            # end_corridor = end_corridor.reverse()
+            path_with_hooks = insert_hook_stops_to_ab(
+                path_with_hooks, end_corridor, turning_head_field, route_params, field_border_poly)
+    path_with_hooks = LineString(list(path_start.coords) + list(path_with_hooks.coords) + list(path_end.coords))
+    return path_with_hooks
+
+
+def determine_bounding_abs(
+        obstacle: LinearRing | Polygon,
+        ab_lines: MultiLineString,
+        working_width: float,
+        track_width: float) -> MultiLineString | None:
+    """Determines the first two ab_lines that are not affected by the obstacle."""
+    if working_width <= track_width:
+        return None
+    affected_ab_line_index = [
+        index for index, ab_line in enumerate(ab_lines.geoms) if ab_line.distance(obstacle) < working_width / 2]
+    if not affected_ab_line_index:
+        return None
+    first_index = min(affected_ab_line_index)
+    last_index = max(affected_ab_line_index)
+    bounding_index = [
+        index for index in [first_index - 1 if first_index > 0 else None,
+                            last_index + 1 if last_index < len(ab_lines.geoms) - 1 else None] if index is not None
+                            ]
+    if len(bounding_index) == 1:
+        return MultiLineString([ab_lines.geoms[bounding_index[0]]])
+    if len(bounding_index) == 2:
+        return MultiLineString([ab_lines.geoms[index] for index in bounding_index])
+    return None
 
 
 def extend_start_end(route: Route) -> None:
@@ -474,6 +985,7 @@ def collision_in_route(route: Route) -> bool:
 
 FUNCTIONS = {
     PostSteps.CUTOUT_AVOIDANCE: cutout_avoidance,
+    PostSteps.EVADE_OBSTACLES: evade_rois,
     PostSteps.EXTEND_START_END: extend_start_end,
     PostSteps.AB_LINE_INTERPOLATION: interpolate_ab_lines
 }

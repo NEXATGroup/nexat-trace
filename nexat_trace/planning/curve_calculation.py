@@ -11,7 +11,7 @@ from nexat_trace.planning.track_graph.secondary_track_graph_node import Secondar
 from nexat_trace.shared.config import CorridorStrategy, RoutePlanningConfig
 from nexat_trace.shared.curve import Curve, CurveType
 from nexat_trace.util import geom_tools as gt
-from nexat_trace.util.field_conversion import get_corridor_line
+from nexat_trace.util.field_conversion import collision_check, get_corridor_line
 
 """
 This module is used to compute dubins paths connecting track segments.
@@ -582,9 +582,11 @@ def search_curve_to_headland(
     """
     working_corridor = get_corridor_line(
         ab_line,
-        route_params.working_width,
+        route_params,
         headland_ring,
         inner_field_border,
+        None,
+        field_border,
         route_params.implement_working_offset
     )
 
@@ -623,7 +625,8 @@ def search_curve_to_headland(
                     path,
                     working_corridor,
                     headland_ring,
-                    route_params
+                    route_params,
+                    field_border
                 )
                 curve_type = CurveType.HOOK
                 valid = True
@@ -661,9 +664,11 @@ def search_curve_to_ab(
 
     working_corridor = get_corridor_line(
         ab_line,
-        route_params.working_width,
+        route_params,
         headland_ring,
         inner_field_border,
+        None,
+        field_border,
         route_params.implement_working_offset
     )
 
@@ -702,7 +707,8 @@ def search_curve_to_ab(
                     path,
                     working_corridor,
                     headland_ring,
-                    route_params
+                    route_params,
+                    field_border
                 )
                 curve_type = CurveType.HOOK
                 valid = True
@@ -1065,13 +1071,14 @@ def trace_curve(
 
 def insert_hook_stops_to_ab(
         curve: LineString,
-        working_corridor,
-        turning_headland,
-        route_params: RoutePlanningConfig):
+        working_corridor: LineString,
+        turning_headland: LinearRing,
+        route_params: RoutePlanningConfig,
+        field_border: Polygon | LinearRing):
     """
     Inserts the needed points in a curve from a headland segment onto an ab line working corridor for a hook curve.
     """
-
+    turning_headland_poly = Polygon(turning_headland)
     points = [Point(c) for c in curve.coords]
     curve_end = points[-1]
 
@@ -1079,9 +1086,17 @@ def insert_hook_stops_to_ab(
         curve_end,
     )
     if working_corridor.length - curve_end_projection > route_params.corridor_threshold:
+
         extension_point = working_corridor.interpolate(
             working_corridor.project(curve_end) + route_params.direction_change_extension_distance_steer
         )
+        extension_point = check_steer_extension(curve,
+                                                curve_end,
+                                                curve.boundary.geoms[0],
+                                                extension_point,
+                                                working_corridor,
+                                                turning_headland_poly,
+                                                route_params)
         points.append(extension_point)
 
         if route_params.working_corridor_extension:
@@ -1092,19 +1107,20 @@ def insert_hook_stops_to_ab(
             else:
                 working_corridor = gt.extend_line_in_bounds(
                     working_corridor,
-                    Polygon(turning_headland),
+                    turning_headland_poly,
                     route_params.direction_change_extension_distance_brake,
                     extend_front=False,
                     extend_back=True,
                 )
-        working_corridor_oriented = working_corridor.intersection(Polygon(turning_headland))
-        if isinstance(working_corridor_oriented, MultiLineString):
-            for line in working_corridor_oriented.geoms:
+        working_corridor = working_corridor.intersection(turning_headland_poly)
+        if isinstance(working_corridor, MultiLineString):
+            for line in working_corridor.geoms:
                 if line.length > 0.1:
-                    working_corridor_oriented = line
+                    working_corridor = line
                     break
-
-        insert_point = Point(working_corridor_oriented.coords[0])
+        field_border_poly = field_border if isinstance(field_border, Polygon) else Polygon(field_border)
+        working_corridor = collision_check(working_corridor, field_border_poly, route_params, curve.boundary.geoms[-1])
+        insert_point = Point(working_corridor.coords[0])
         points.append(insert_point)
         return LineString(points)
 
@@ -1114,11 +1130,18 @@ def insert_hook_stops_to_ab(
 def insert_hook_stops_to_headland(
         curve: LineString,
         working_corridor,
-        turning_headland,
-        route_params: RoutePlanningConfig):
+        turning_headland: LinearRing | Polygon | MultiPolygon,
+        route_params: RoutePlanningConfig,
+        field_border: Polygon | LinearRing):
     """
     Inserts the needed points in a curve from an ab line working corridor onto the headland for a hook curve.
+
+    Working_corridor needs to be oriented correctly.
     """
+    if isinstance(turning_headland, MultiPolygon):
+        turning_headland_poly = gt.multi_poly_to_relevant_poly(turning_headland, working_corridor)
+    else:
+        turning_headland_poly = turning_headland if isinstance(turning_headland, Polygon) else Polygon(turning_headland)
     points = [Point(c) for c in curve.coords]
     curve_start = points[0]
 
@@ -1132,6 +1155,14 @@ def insert_hook_stops_to_headland(
                 curve_start
             ) - route_params.direction_change_extension_distance_steer
         )
+        # test if we actually backed up far enough
+        backup_point = check_steer_extension(curve,
+                                             curve_start,
+                                             curve.boundary.geoms[-1],
+                                             backup_point,
+                                             working_corridor,
+                                             turning_headland_poly,
+                                             route_params)
         points.insert(0, backup_point)
         if working_corridor is None or not isinstance(working_corridor, LineString) or working_corridor.length < 0.01:
             if route_params.debug_prints:
@@ -1140,22 +1171,68 @@ def insert_hook_stops_to_headland(
         else:
             working_corridor = gt.extend_line_in_bounds(
                 working_corridor,
-                Polygon(turning_headland),
+                turning_headland_poly,
                 route_params.direction_change_extension_distance_brake,
                 extend_front=True,
                 extend_back=False,
             )
-        working_corridor = working_corridor.intersection(Polygon(turning_headland))
+        working_corridor = working_corridor.intersection(turning_headland_poly)
         if isinstance(working_corridor, MultiLineString):
             for line in working_corridor.geoms:
                 if line.length > 0.1:
                     working_corridor = line
                     break
+        field_border_poly = field_border if isinstance(field_border, Polygon) else Polygon(field_border)
+        working_corridor = collision_check(working_corridor, field_border_poly, route_params, curve.boundary.geoms[0])
         corridor_end = Point(working_corridor.coords[-1])
         points.insert(0, corridor_end)
         return LineString(points)
 
     return curve
+
+
+def check_steer_extension(curve: LineString,
+                          hook_origin: Point,
+                          curve_ref_point: Point,
+                          steer_extension_point: Point,
+                          working_corridor: LineString,
+                          turning_headland_poly: Polygon,
+                          route_params: RoutePlanningConfig) -> Point:
+    """Validates and adjusts a steering extension point to ensure proper direction change geometry.
+
+    Checks if the steering extension is long enough relative to the curve tangent orientation.
+    If the extension is insufficient, it recalculates the point based on the tangent direction
+    and snaps it to the extended working corridor to ensure collision-free steering.
+
+    Args:
+        curve: The turn curve to analyze for tangent direction.
+        hook_origin: The point where the steering extension should originate (typically curve end).
+        curve_ref_point: Reference point on the curve used to determine tangent direction.
+        steer_extension_point: The initial steering extension point to validate/adjust.
+        working_corridor: The corridor line representing the working direction.
+        turning_headland_poly: The headland polygon boundary for collision checking.
+        route_params: Route planning configuration containing steering distance parameters.
+
+    Returns
+    -------
+        The validated or adjusted steering extension point, positioned correctly for the
+        direction change maneuver and collision-free within the headland boundary.
+    """
+    tangent = gt.get_tangent_at_nearest_point(hook_origin, curve)
+    tangent = gt.extend_line(tangent, 2 * curve.length)
+    origin_dist_on_tang = tangent.project(hook_origin)
+    ref_dist_on_tang = tangent.project(curve_ref_point)
+    if origin_dist_on_tang > ref_dist_on_tang:
+        tangent = tangent.reverse()
+        origin_dist_on_tang = tangent.project(hook_origin)
+    steer_point_dist_on_tang = tangent.project(steer_extension_point)
+    if steer_point_dist_on_tang > origin_dist_on_tang:
+        steer_extension_point = tangent.interpolate(
+            origin_dist_on_tang - route_params.direction_change_extension_distance_steer)
+        # guuard against tangent not being parallel to corridor
+        ext_corridor = gt.extend_line_in_bounds(working_corridor, turning_headland_poly, 2 * curve.length)
+        steer_extension_point = ext_corridor.interpolate(ext_corridor.project(steer_extension_point))
+    return steer_extension_point
 
 
 def search_loop_curve(
