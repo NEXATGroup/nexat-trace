@@ -990,6 +990,10 @@ def get_curve(
         return None, None, None
     line_distance = max(current_line.distance(target_line), turning_radius)
 
+    # Remember the start of the ORIGINAL target line, before any extension.
+    # The chosen curve should connect as close as possible to this point.
+    target_line_start = Point(target_line.coords[0])
+
     if extend_start_line:
         current_line = extend_line(
             current_line, distance=line_distance * 2, extend_front=extend_start_line, extend_back=False
@@ -1004,7 +1008,9 @@ def get_curve(
         if isinstance(target_line, MultiLineString):
             target_line = LineString([coord for line in target_line.geoms for coord in line.coords])
 
-    buffering_sign = relative_orientation(current_line, target_line, turning_radius)
+    # Decide the turn direction on the EXTENDED lines (so a pivot/arc can be
+    # found), but select the candidate relative to the ORIGINAL target line start.
+    buffering_sign = relative_orientation(current_line, target_line, turning_radius, target_line_start)
 
     pivot_point = first_intersection(
         current_line=current_line.offset_curve(buffering_sign * turning_radius),
@@ -1074,15 +1080,62 @@ def first_intersection(current_line: LineString, intersector: LineString) -> Poi
     return intersection.coords[0]
 
 
-def relative_orientation(first_line: LineString, second_line: LineString, radius: float) -> int:
+def _as_linestring(geom) -> LineString:
+    """Flatten a MultiLineString (or LineString) into a single LineString."""
+    if isinstance(geom, MultiLineString):
+        return LineString([coord for line in geom.geoms for coord in line.coords])
+    return geom
+
+
+def _pivot_for_direction(first_line: LineString, second_line: LineString, radius: float, direction: int):
+    """Return the pivot point (circle centre) for a turn in the given direction.
+
+    The pivot is the intersection of the two offset curves on the given side.
+    Returns None if no such pivot exists.
+    """
+    return first_intersection(
+        first_line.offset_curve(direction * radius),
+        second_line.offset_curve(direction * radius)
+    )
+
+
+def _connection_distance(
+        first_line: LineString, second_line: LineString, radius: float, direction: int, reference_point: Point
+) -> float | None:
+    """Distance along the second line from a reference point to the curve connection point.
+
+    A negative value means the curve connects before the reference point
+    (preferred), a positive value means after. Returns None if no pivot exists.
+    """
+    pivot = _pivot_for_direction(first_line, second_line, radius, direction)
+    if pivot is None:
+        return None
+
+    arc = pivot.buffer(radius, 45).exterior
+    arc_end = tangential_intersection(second_line.reverse(), arc, radius * 0.01)
+    if arc_end is None:
+        return None
+
+    return second_line.project(arc_end) - second_line.project(reference_point)
+
+
+def relative_orientation(
+        first_line: LineString, second_line: LineString, radius: float, reference_point: Point | None = None
+) -> int:
     """Take two lines and decide the relative orientation.
 
     i.e. if a turn around a circle with the given radius from the first line to the second line is a left or a right turn.
     If no such turn exists an Error is raised.
 
+    The direction is chosen so that the resulting curve connects as close as
+    possible to the reference point on the second line (defaults to the start of
+    the second line), preferring a curve that connects before that point.
+
     Args:
         first_line: the first line
         second_line: the second line
+        reference_point: point on the second line the curve should connect near.
+            Defaults to the start of the second line.
 
     Returns
     -------
@@ -1092,36 +1145,26 @@ def relative_orientation(first_line: LineString, second_line: LineString, radius
     ------
         ValueError: if no turn is possible
     """
-    possible_intersection_directions = [
-        direction for direction in [-1, 1]
-        if first_intersection(
-            first_line.offset_curve(direction * radius),
-            second_line.offset_curve(direction * radius)) is not None
-        ]
+    first_line = _as_linestring(first_line)
+    second_line = _as_linestring(second_line)
+    if reference_point is None:
+        reference_point = Point(second_line.coords[0])
 
-    if not possible_intersection_directions:
+    # Build a candidate for each direction and pick the one whose curve connects
+    # closest to (ideally before) the reference point on the second line.
+    candidates = []
+    for direction in (-1, 1):
+        connection_dist = _connection_distance(first_line, second_line, radius, direction, reference_point)
+        if connection_dist is not None:
+            candidates.append((connection_dist, direction))
+
+    if not candidates:
         raise ValueError("No turns possible!")
 
-    if len(possible_intersection_directions) == 1:
-        return possible_intersection_directions[0]
-
-    direction = possible_intersection_directions[0]
-    if isinstance(first_line, MultiLineString):
-        first_line = LineString([coord for line in first_line.geoms for coord in line.coords])
-    if isinstance(second_line, MultiLineString):
-        second_line = LineString([coord for line in second_line.geoms for coord in line.coords])
-    first_line = first_line.offset_curve(direction * radius)
-    second_line = second_line.offset_curve(direction * radius)
-    intersection_point = first_intersection(first_line, second_line)
-    if isinstance(first_line, MultiLineString):
-        first_line = LineString([coord for line in first_line.geoms for coord in line.coords])
-    if isinstance(second_line, MultiLineString):
-        second_line = LineString([coord for line in second_line.geoms for coord in line.coords])
-    direction_point = first_intersection(first_line, second_line.offset_curve(0.01))
-    if direction_point is None:
-        return possible_intersection_directions[1]
-
-    return np.sign(first_line.project(intersection_point) - first_line.project(direction_point))
+    # Prefer a candidate that connects before the reference point (negative
+    # distance); among those, pick the closest one.
+    candidates.sort(key=lambda c: (c[0] < 0, abs(c[0])))
+    return candidates[0][1]
 
 
 def multi_poly_to_relevant_poly(mpoly: MultiPolygon, line: LineString) -> Polygon:

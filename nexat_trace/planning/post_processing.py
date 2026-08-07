@@ -366,7 +366,7 @@ def evade_rois(route: Route):
 
             # TODO implement for only drive all?
             # route._route_params.corridor_strategy = CorridorStrategy.DRIVE_ALL.value
-            if path_around_obs is not None and route._route_params.corridor_strategy != CorridorStrategy.DRIVE_NONE.value:
+            if path_around_obs is not None and route._route_params.corridor_strategy != CorridorStrategy.DRIVE_NONE:
                 inner_border = route._full_inner_border
                 start_point_ab_candidate = min(
                     ((ab, ab.distance(all_intersections[0].start))for ab in route._track_system.ab_lines.geoms),
@@ -675,7 +675,7 @@ def assemble_path_around_obstacle(
             robot_point=None,
             border_buffer=bounds,
             extend_start_line=True,
-            extend_target_line=False)
+            extend_target_line=True)
 
         gen_path_2, _, _ = geom_tools.get_curve(
             obstacle_segment,
@@ -685,7 +685,7 @@ def assemble_path_around_obstacle(
             None,
             bounds,
             extend_start_line=True,
-            extend_target_line=False)
+            extend_target_line=True)
         if gen_path_1 is None or gen_path_2 is None:
             return None, None
         if debug_prints:
